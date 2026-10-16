@@ -1,0 +1,13 @@
+# Extra dependencies for training, on top of backend/requirements.txt.
+# Install with: pip install -r requirements-ml.txt
+#
+# CPU-only PyTorch install (simplest, works everywhere):
+#   pip install torch torchvision
+#
+# If you have an NVIDIA GPU and want CUDA acceleration, follow the
+# selector at https://pytorch.org/get-started/locally/ instead — the
+# right command depends on your CUDA version.
+
+torch>=2.2
+torchvision>=0.17
+Pillow>=10.0
