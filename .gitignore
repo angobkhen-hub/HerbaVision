@@ -8,3 +8,10 @@ __pycache__/
 # Flutter
 frontend/build/
 frontend/.dart_tool/
+
+backend/venv/
+__pycache__/
+*.pyc
+.env
+frontend/build/
+frontend/.dart_tool/
