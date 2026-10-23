@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,17 @@ const _fieldFill = Color(0xFFF1F5F2);
 const _line = Color(0xFFDDE5DF);
 const _pageTint = Color(0xFFF6F9F7);
 
+// Status banners (Loading = blue, Success = green, Error = red).
+const _loadingInk = Color(0xFF1F5A99);
+const _loadingBg = Color(0xFFEAF2FB);
+const _loadingLine = Color(0xFFB9D3EE);
+const _successBg = Color(0xFFE8F4EC);
+const _successLine = Color(0xFFB7D9C4);
+
+/// How long the "Login successful" message stays on screen before the
+/// dashboard opens.
+const Duration _kSuccessHold = Duration(seconds: 2);
+
 /// Screens at least this wide get the split-screen "web" layout.
 /// Anything narrower gets the mobile layout.
 const double _kWideBreakpoint = 900;
@@ -34,11 +46,27 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _passwordFocus = FocusNode();
   bool _obscurePassword = true;
+
+  // The async states of this screen:
+  //   LOADING : _isLoading (+ _slow when it takes longer than usual)
+  //   SUCCESS : _success, "Login successful" shows, then the app moves on
+  //   EMPTY   : a field is blank or invalid, so the form explains what is missing
+  //   ERROR   : _error holds what went wrong and what the user can do next
   bool _isLoading = false;
-  String? _errorMessage;
+  bool _slow = false;
+  bool _success = false;
+  String? _successName;
+  AutovalidateMode _autovalidate = AutovalidateMode.disabled;
+  AuthResult? _error;
+  Timer? _slowTimer;
+
+  /// True while a request is running or the success message is showing, so
+  /// nothing can be submitted twice.
+  bool get _locked => _isLoading || _success;
 
   @override
   void dispose() {
+    _slowTimer?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     _passwordFocus.dispose();
@@ -46,37 +74,69 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // SHARED LOGIC (used by both layouts, same behaviour as before)
+  // SHARED LOGIC (used by both layouts)
   // ---------------------------------------------------------------------
 
-  Future<void> _handleLogin() async {
-    if (_isLoading) return;
-    if (!_formKey.currentState!.validate()) return;
-
+  void _startLoading() {
+    _slowTimer?.cancel();
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      _slow = false;
+      _error = null;
     });
+    // After a few seconds, tell the user we are still working.
+    _slowTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted && _isLoading) setState(() => _slow = true);
+    });
+  }
 
-    try {
-      final authState = context.read<AuthState>();
-      final success = await authState.login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
-      if (success) {
-        // Lets the browser / OS offer to save the credentials.
-        TextInput.finishAutofillContext();
-      } else if (mounted) {
-        setState(() => _errorMessage = 'Invalid email or password');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = 'Something went wrong. Try again.');
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+  void _clearError() {
+    if (_error != null) setState(() => _error = null);
+  }
+
+  Future<void> _handleLogin() async {
+    if (_locked) return; // prevents duplicate submissions
+
+    // EMPTY / INVALID INPUT: explain what is missing, don't call the server.
+    if (!_formKey.currentState!.validate()) {
+      setState(() => _autovalidate = AutovalidateMode.onUserInteraction);
+      return;
     }
+
+    FocusScope.of(context).unfocus();
+    final authState = context.read<AuthState>();
+
+    // LOADING
+    _startLoading();
+    final result = await authState.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+      startSession: false, // hold the session so the success message can show
+    );
+    _slowTimer?.cancel();
+    if (!mounted) return;
+
+    // SUCCESS: show the message, then let the app move to the dashboard.
+    if (result.success) {
+      // Lets the browser / OS offer to save the credentials.
+      TextInput.finishAutofillContext();
+      setState(() {
+        _isLoading = false;
+        _slow = false;
+        _success = true;
+        _successName = authState.pendingUserName;
+      });
+      await Future.delayed(_kSuccessHold);
+      authState.completeLogin();
+      return;
+    }
+
+    // ERROR: show what went wrong and what the user can do about it.
+    setState(() {
+      _isLoading = false;
+      _slow = false;
+      _error = result;
+    });
   }
 
   void _continueAsGuest() {
@@ -139,42 +199,133 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildErrorBanner() {
+  /// One status box: used for Loading, Success and Error so they look alike.
+  Widget _statusBox({
+    required Color background,
+    required Color borderColor,
+    required Widget leading,
+    required String label,
+    required String text,
+    required Color textColor,
+    String? extra,
+    Widget? action,
+  }) {
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        margin: const EdgeInsets.only(bottom: 18),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: leading,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '$label: ',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        TextSpan(text: text),
+                      ],
+                    ),
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (extra != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, left: 30),
+                child: Text(
+                  extra,
+                  style: TextStyle(fontSize: 13, color: textColor),
+                ),
+              ),
+            if (action != null) Align(alignment: Alignment.centerRight, child: action),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Shows the current state: Loading, Success or Error (nothing otherwise).
+  Widget _buildStatusBanner() {
+    Widget? banner;
+
+    if (_success) {
+      final name = _successName;
+      banner = _statusBox(
+        background: _successBg,
+        borderColor: _successLine,
+        leading: const Icon(Icons.check_circle, color: _brandGreen, size: 20),
+        label: 'Success',
+        text: name == null
+            ? 'Login successful. Welcome back!'
+            : 'Login successful. Welcome back, $name!',
+        textColor: _deepGreen,
+        extra: 'Opening your dashboard…',
+      );
+    } else if (_isLoading) {
+      banner = _statusBox(
+        background: _loadingBg,
+        borderColor: _loadingLine,
+        leading: const SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(strokeWidth: 2.2, color: _loadingInk),
+        ),
+        label: 'Loading',
+        text: 'Logging you in…',
+        textColor: _loadingInk,
+        extra:
+            _slow ? 'Still working… the server is taking longer than usual.' : null,
+      );
+    } else if (_error != null) {
+      final error = _error!;
+      banner = _statusBox(
+        background: Colors.red.shade50,
+        borderColor: Colors.red.shade200,
+        leading: Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
+        label: 'Error',
+        text: error.message,
+        textColor: Colors.red.shade800,
+        // Retry is offered only when trying again can help
+        // (connection or server problems, not a wrong password).
+        action: error.canRetry
+            ? TextButton.icon(
+                onPressed: _locked ? null : _handleLogin,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red.shade800,
+                ),
+              )
+            : null,
+      );
+    }
+
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       alignment: Alignment.topCenter,
-      child: _errorMessage == null
-          ? const SizedBox(width: double.infinity)
-          : Semantics(
-              liveRegion: true,
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                margin: const EdgeInsets.only(bottom: 18),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.error_outline,
-                        color: Colors.red.shade700, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: TextStyle(
-                          color: Colors.red.shade800,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+      child: banner ?? const SizedBox(width: double.infinity),
     );
   }
 
@@ -183,6 +334,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return AutofillGroup(
       child: Form(
         key: _formKey,
+        autovalidateMode: _autovalidate,
         child: FocusTraversalGroup(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -202,20 +354,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 style: TextStyle(fontSize: 14, color: _muted),
               ),
               const SizedBox(height: 24),
-              _buildErrorBanner(),
+              _buildStatusBanner(),
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
                 autofillHints: const [AutofillHints.email],
                 autocorrect: false,
-                enabled: !_isLoading,
+                enabled: !_locked,
                 style: const TextStyle(color: _ink),
                 cursorColor: _brandGreen,
                 decoration: _fieldDecoration(
                   label: 'Email',
                   icon: Icons.email_outlined,
                 ),
+                onChanged: (_) => _clearError(),
                 onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
                 validator: _validateEmail,
               ),
@@ -226,7 +379,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 obscureText: _obscurePassword,
                 textInputAction: TextInputAction.done,
                 autofillHints: const [AutofillHints.password],
-                enabled: !_isLoading,
+                enabled: !_locked,
                 style: const TextStyle(color: _ink),
                 cursorColor: _brandGreen,
                 decoration: _fieldDecoration(
@@ -243,6 +396,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
+                onChanged: (_) => _clearError(),
                 // Pressing Enter / "Done" submits, which matters on web.
                 onFieldSubmitted: (_) => _handleLogin(),
                 validator: _validatePassword,
@@ -251,7 +405,7 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _handleLogin,
+                  onPressed: _locked ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _brandGreen,
                     foregroundColor: Colors.white,
@@ -267,15 +421,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   child: _isLoading
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
-                          ),
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text('Logging in…'),
+                          ],
                         )
-                      : const Text('Log in'),
+                      : _success
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check, size: 22),
+                                SizedBox(width: 10),
+                                Text('Logged in'),
+                              ],
+                            )
+                          : const Text('Log in'),
                 ),
               ),
               const SizedBox(height: 20),
@@ -291,7 +461,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
               OutlinedButton.icon(
-                onPressed: _isLoading ? null : _continueAsGuest,
+                onPressed: _locked ? null : _continueAsGuest,
                 icon: const Icon(Icons.person_outline),
                 label: const Text('Continue as guest'),
                 style: OutlinedButton.styleFrom(
@@ -317,7 +487,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(color: _muted),
                   ),
                   TextButton(
-                    onPressed: _isLoading ? null : _openRegister,
+                    onPressed: _locked ? null : _openRegister,
                     style: TextButton.styleFrom(
                       foregroundColor: _brandGreen,
                       textStyle: const TextStyle(fontWeight: FontWeight.w700),

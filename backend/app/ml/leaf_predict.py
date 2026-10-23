@@ -21,7 +21,7 @@ import sys
 
 import torch
 import torch.nn as nn
-from PIL import Image
+from PIL import Image, ImageOps
 from torchvision import models, transforms
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,8 +30,8 @@ STATS_PATH = os.path.join(_HERE, "leaf_stats.pt")
 
 # A result counts as "in the dataset" only if ALL checks pass.
 # Tune with:  python leaf_predict.py --folder <photos of leaves NOT in the dataset>
-MIN_CONFIDENCE = 0.80   # top guess must be at least this sure (was 0.60)
-MIN_MARGIN = 0.30       # top guess must beat the 2nd guess by at least this much
+MIN_CONFIDENCE = 0.65   # top guess must be at least this sure (was 0.80 - too strict for real-world photos)
+MIN_MARGIN = 0.20       # top guess must beat the 2nd guess by at least this much (was 0.30)
 DISTANCE_SCALE = 1.0    # multiplies the distance limit saved in leaf_stats.pt (lower = stricter)
 
 NOT_IN_DATASET_MESSAGE = (
@@ -51,12 +51,30 @@ COMMON_NAMES = {
 }
 OTHER_NAME = "Other plants"           # if this is the top guess, the leaf is "not in the dataset"
 
-_preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
+# Multi-view prediction (test-time augmentation). Real-world photos often have the leaf
+# off-centre, which a single centre crop can cut off. With USE_TTA the model looks at the
+# centre plus the four corners, each also mirrored (10 views), and the probabilities are
+# averaged. Set USE_TTA = False to go back to the single centre crop.
+USE_TTA = os.environ.get("LEAF_TTA", "1") != "0"   # set the environment variable LEAF_TTA=0 to compare
+CROP = 224
+
+_resize = transforms.Resize(256)
+_finish = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
+
+
+def _views(im):
+    """Return the PIL views to classify. The centre crop (what the model was tested on) is first."""
+    im = _resize(im)
+    w, h = im.size
+    cx, cy = int(round((w - CROP) / 2.0)), int(round((h - CROP) / 2.0))
+    corners = [(cx, cy), (0, 0), (w - CROP, 0), (0, h - CROP), (w - CROP, h - CROP)]
+    crops = [im.crop((x, y, x + CROP, y + CROP)) for x, y in corners]
+    if not USE_TTA:
+        return crops[:1]
+    return crops + [ImageOps.mirror(c) for c in crops]
 
 _model = None
 _classes = None
@@ -102,11 +120,15 @@ def predict(image_path, top_k=3):
     """Return the top_k guesses as a list of (name, probability), best first."""
     _load()
     with Image.open(image_path) as im:
-        x = _preprocess(im.convert("RGB")).unsqueeze(0)
+        # Phone cameras often save the pixels sideways and add an EXIF "rotate" note.
+        # Browsers and galleries obey it; Pillow does not, so apply it here so the
+        # model sees the leaf the way you see it.
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        x = torch.stack([_finish(v) for v in _views(im)])
     with torch.no_grad():
         feats = torch.flatten(_model.avgpool(_model.features(x)), 1)
-        probs = _model.classifier(feats).softmax(dim=1)[0]
-        dist = _distance(feats[0])
+        probs = _model.classifier(feats).softmax(dim=1).mean(dim=0)
+        dist = _distance(feats[0])      # feats[0] is the centre crop
     values, indices = probs.topk(min(top_k, len(_classes)))
     results = Guesses((COMMON_NAMES.get(_classes[i], _classes[i]), float(v))
                       for v, i in zip(values, indices))
@@ -173,6 +195,8 @@ if __name__ == "__main__":
     results = predict(sys.argv[1])
     for name, p in results:
         print(f"  {name:<16}{p * 100:5.1f}%")
+    print(f"  margin over 2nd guess: {margin(results) * 100:.1f}%   "
+          f"(needs conf >= {MIN_CONFIDENCE * 100:.0f}% and margin >= {MIN_MARGIN * 100:.0f}%)")
     if results.distance is not None:
         print(f"  distance to nearest known plant: {results.distance:.2f}")
     if not is_confident(results):

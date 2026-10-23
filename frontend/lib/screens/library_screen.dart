@@ -396,20 +396,39 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _buildContent(List<_Herb> visible) {
+    // LOADING
     if (_loading) {
-      return Center(child: CircularProgressIndicator(strokeWidth: 2.5));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 2.5),
+            SizedBox(height: 14),
+            Text(
+              'Loading: fetching the herb library…',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
+    // ERROR
     if (_error != null) {
       return _StateMessage(
         icon: Icons.cloud_off_outlined,
-        title: _error!,
+        title: 'Error: ${_error!}',
         message: 'Check that the server is running, then try again.',
         actionLabel: 'Try again',
         onAction: _load,
       );
     }
 
+    // EMPTY: the database has no herbs at all
     if (_herbs.isEmpty) {
       return RefreshIndicator(
         onRefresh: _load,
@@ -417,31 +436,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
           SizedBox(height: 60),
           _StateMessage(
             icon: Icons.menu_book_outlined,
-            title: 'The library is empty',
+            title: 'Empty: the library has no herbs yet',
             message: 'No herbs have been added to the database yet.',
           ),
         ]),
       );
     }
 
+    // EMPTY: nothing matches the search or filter
     if (visible.isEmpty) {
       final onSaved = _filter == _savedFilter && _query.isEmpty;
       return _StateMessage(
         icon: onSaved ? Icons.bookmark_border : Icons.search_off,
-        title: onSaved ? 'No saved herbs yet' : 'No herbs found',
+        title: onSaved ? 'Empty: no saved herbs yet' : 'Empty: no herbs found',
         message: onSaved
             ? 'Tap the bookmark on any herb to keep it here.'
             : 'Try a different name or clear the filter.',
-        actionLabel: onSaved ? null : 'Clear search and filter',
-        onAction: onSaved
-            ? null
-            : () {
-                _searchController.clear();
-                setState(() {
-                  _query = '';
-                  _filter = _all;
-                });
-              },
+        actionLabel: onSaved ? 'Browse all herbs' : 'Clear search and filter',
+        onAction: () {
+          _searchController.clear();
+          setState(() {
+            _query = '';
+            _filter = _all;
+          });
+        },
       );
     }
 
