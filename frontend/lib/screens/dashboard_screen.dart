@@ -11,6 +11,7 @@ import 'upload_screen.dart';
 import 'library_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
+import 'report_form_screen.dart';
 
 /// Screens at least this wide get the sidebar ("web") layout.
 /// Narrower screens get the mobile layout with a drawer.
@@ -276,6 +277,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _openReportForm() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ReportFormScreen()),
+    );
+  }
+
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => SettingsScreen()),
@@ -332,6 +339,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onDashboard: () {},
                       onLibrary: _openLibrary,
                       onHistory: _openHistory,
+                      onReport: _openReportForm,
                       onSettings: _openSettings,
                     ),
                   ),
@@ -375,6 +383,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onHistory: () {
                   Navigator.pop(context);
                   _openHistory();
+                },
+                onReport: () {
+                  Navigator.pop(context);
+                  _openReportForm();
                 },
                 onSettings: () {
                   Navigator.pop(context);
@@ -486,12 +498,14 @@ class _SidebarContent extends StatelessWidget {
   final VoidCallback onDashboard;
   final VoidCallback onLibrary;
   final VoidCallback onHistory;
+  final VoidCallback onReport;
   final VoidCallback onSettings;
 
   const _SidebarContent({
     required this.onDashboard,
     required this.onLibrary,
     required this.onHistory,
+    required this.onReport,
     required this.onSettings,
   });
 
@@ -538,6 +552,11 @@ class _SidebarContent extends StatelessWidget {
             icon: Icons.history,
             label: 'History',
             onTap: onHistory,
+          ),
+          _DrawerItem(
+            icon: Icons.report_outlined,
+            label: 'Report form',
+            onTap: onReport,
           ),
           _DrawerItem(
             icon: Icons.settings_outlined,
