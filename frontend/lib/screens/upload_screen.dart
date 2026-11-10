@@ -7,6 +7,13 @@ import '../models/herb_scan.dart';
 import '../services/herb_recognition_service.dart';
 import '../theme/app_colors.dart';
 
+/// What the upload screen returns: the scan result plus the photo the user sent.
+class UploadResult {
+  final HerbScan scan;
+  final Uint8List imageBytes;
+  const UploadResult(this.scan, this.imageBytes);
+}
+
 /// Lets the user upload a photo of a leaf and shows the identification result.
 ///
 /// Photo picking uses `image_picker`. The photo is kept as raw bytes (not a
@@ -27,6 +34,9 @@ class _UploadScreenState extends State<UploadScreen> {
   Uint8List? _imageBytes;
   String _filename = 'leaf.jpg';
   bool _loading = false;
+  bool _notFound = false; // true after the backend says "plant not found"
+  String? _guessName; // best guess from the backend, if it sent one
+  int? _guessConfidence;
   String? _error;
 
   Future<void> _showSourceSheet() async {
@@ -97,6 +107,9 @@ class _UploadScreenState extends State<UploadScreen> {
         _imageBytes = bytes;
         _filename = picked.name.isNotEmpty ? picked.name : 'leaf.jpg';
         _error = null;
+        _notFound = false;
+        _guessName = null;
+        _guessConfidence = null;
       });
 
       await _identify();
@@ -109,6 +122,9 @@ class _UploadScreenState extends State<UploadScreen> {
   Future<void> _identify() async {
     setState(() {
       _loading = true;
+      _notFound = false;
+      _guessName = null;
+      _guessConfidence = null;
       _error = null;
     });
 
@@ -119,11 +135,18 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       if (!mounted) return;
       setState(() => _loading = false);
-      Navigator.of(context).pop(scan);
-    } on PlantNotRecognizedException {
+      // Send back the photo together with the result so the dashboard can
+      // show it in the result dialog.
+      Navigator.of(context).pop(UploadResult(scan, _imageBytes!));
+    } on PlantNotRecognizedException catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
-      await _showNotFoundDialog();
+      // No popup: the card on this screen switches to the "not found" view.
+      setState(() {
+        _loading = false;
+        _notFound = true;
+        _guessName = e.guessName;
+        _guessConfidence = e.guessConfidence;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -133,25 +156,106 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  Future<void> _showNotFoundDialog() {
-    return showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Plant not found'),
-        content: const Text(
-          "We couldn't identify this plant. It may not be in our database "
-          'yet \u2014 more plants are coming soon.\n\n'
-          'If it should be one of our herbs, try a clearer, close-up photo '
-          'of a single leaf.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('OK'),
+  Widget _tip(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: AppColors.textAccent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 15, color: AppColors.textMuted),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _notFoundContent() {
+    final amber = Colors.amber.shade700;
+    final guess = _guessName;
+    final guessText = guess == null
+        ? null
+        : (_guessConfidence != null
+            ? 'Closest guess: $guess ($_guessConfidence%)'
+            : 'Closest guess: $guess');
+
+    return Column(
+      children: [
+        Container(
+          width: 68,
+          height: 68,
+          decoration: BoxDecoration(
+            color: Colors.amber.withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.search_off_rounded, size: 36, color: amber),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          "We couldn't confirm this plant",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'It may not be in our database yet, or the photo may be unclear. '
+          'More plants are coming soon.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 15, color: AppColors.textMuted),
+        ),
+        if (guessText != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.amber.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              guessText,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary),
+            ),
+          ),
+        ],
+        const SizedBox(height: 20),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppColors.bgAccent,
+            borderRadius: BorderRadius.circular(kRadius - 4),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tips for a better photo',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary),
+              ),
+              _tip(Icons.eco_outlined, 'Show one leaf, filling most of the photo.'),
+              _tip(Icons.wb_sunny_outlined, 'Use good, even daylight. Avoid shadows.'),
+              _tip(Icons.crop_free, 'Keep the background plain and uncluttered.'),
+              _tip(Icons.center_focus_strong_outlined,
+                  'Hold the camera steady so the leaf is sharp.'),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -161,107 +265,143 @@ class _UploadScreenState extends State<UploadScreen> {
       backgroundColor: AppColors.bg,
       appBar: AppBar(title: const Text('Upload a leaf photo')),
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(kRadius),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Column(
-                    children: [
-                      if (_imageBytes != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(kRadius - 4),
-                          child: Image.memory(
-                            _imageBytes!,
-                            height: 160,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      else
-                        Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: AppColors.bgAccent,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.image_outlined,
-                              size: 32, color: AppColors.textAccent),
-                        ),
-                      const SizedBox(height: 16),
-                      if (_loading) ...[
-                        SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                              color: AppColors.textAccent, strokeWidth: 3),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Identifying…',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary),
-                        ),
-                      ] else ...[
-                        Text(
-                          _imageBytes != null ? 'Photo selected' : 'Upload a photo',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Choose a clear photo of the leaf.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: AppColors.textMuted),
-                        ),
-                      ],
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: AppColors.danger),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                if (!_loading)
-                  SizedBox(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
                     width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _showSourceSheet,
-                      icon: const Icon(Icons.upload_outlined, size: 18),
-                      label: Text(_imageBytes != null
-                          ? 'Try another photo'
-                          : 'Choose photo'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.brand,
-                        foregroundColor: AppColors.onBrand,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(kRadius),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 32, horizontal: 24),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(kRadius),
+                      border: Border.all(
+                        color: _notFound
+                            ? Colors.amber.shade600
+                            : AppColors.border,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        if (_imageBytes != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(kRadius - 4),
+                            child: Image.memory(
+                              _imageBytes!,
+                              height: 220,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        else
+                          Container(
+                            width: 88,
+                            height: 88,
+                            decoration: BoxDecoration(
+                              color: AppColors.bgAccent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.image_outlined,
+                                size: 40, color: AppColors.textAccent),
+                          ),
+                        const SizedBox(height: 20),
+                        if (_loading) ...[
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(
+                                color: AppColors.textAccent, strokeWidth: 3),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Identifying…',
+                            style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary),
+                          ),
+                        ] else if (_notFound) ...[
+                          _notFoundContent(),
+                        ] else ...[
+                          Text(
+                            _imageBytes != null
+                                ? 'Photo selected'
+                                : 'Upload a photo',
+                            style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Choose a clear photo of the leaf.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 15, color: AppColors.textMuted),
+                          ),
+                        ],
+                        if (_error != null) ...[
+                          const SizedBox(height: 14),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 15, color: AppColors.danger),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (!_loading)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _showSourceSheet,
+                        icon: const Icon(Icons.upload_outlined, size: 22),
+                        label: Text(
+                          _imageBytes != null
+                              ? 'Try another photo'
+                              : 'Choose photo',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.brand,
+                          foregroundColor: AppColors.onBrand,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(kRadius),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                  if (!_loading && _notFound && !kIsWeb) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.camera),
+                        icon: const Icon(Icons.photo_camera_outlined, size: 22),
+                        label: const Text('Take a new photo',
+                            style: TextStyle(fontSize: 16)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textAccent,
+                          side: BorderSide(color: AppColors.border),
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(kRadius),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),

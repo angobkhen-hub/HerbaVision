@@ -1,4 +1,6 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, prefer_const_declarations
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/herb_scan.dart';
@@ -148,10 +150,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openUploadFlow() async {
-    final result = await Navigator.of(context).push<HerbScan>(
+    // UploadScreen now returns the scan result AND the photo the user sent.
+    final upload = await Navigator.of(context).push<UploadResult>(
       MaterialPageRoute(builder: (_) => UploadScreen()),
     );
-    if (result == null || !mounted) return;
+    if (upload == null || !mounted) return;
+    final result = upload.scan;
 
     final authState = context.read<AuthState>();
     String? note;
@@ -176,34 +180,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     if (!mounted) return;
-    await _showResultDialog(result, note);
+    await _showResultDialog(result, note, upload.imageBytes);
   }
 
-  Future<void> _showResultDialog(HerbScan scan, String? note) async {
+  Future<void> _showResultDialog(
+      HerbScan scan, String? note, Uint8List imageBytes) async {
     // Look up the herb's stored information (leaf_items table). If it can't be
     // loaded, the dialog still shows the identification result.
-    final info = await ApiService.getHerbInfo(scan.latinName);
+    dynamic info;
+    try {
+      info = await ApiService.getHerbInfo(scan.latinName);
+    } catch (_) {
+      info = null; // the dialog still opens, with "coming soon" text
+    }
     if (!mounted) return;
 
-    Widget section(String title, String? text) {
+    // One information card: tinted icon badge, title, text.
+    // [big] is used by the wide (web) layout.
+    Widget section(String title, String? text, IconData icon, Color color,
+        {bool big = false}) {
       if (text == null || text.trim().isEmpty) return SizedBox.shrink();
-      return Padding(
-        padding: EdgeInsets.only(top: 14),
-        child: Column(
+      return Container(
+        width: double.infinity,
+        margin: EdgeInsets.only(top: big ? 14 : 12),
+        padding: EdgeInsets.all(big ? 18 : 14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(big ? 18 : 16),
+          border: Border.all(color: color.withOpacity(0.25)),
+        ),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary),
+            Container(
+              width: big ? 42 : 34,
+              height: big ? 42 : 34,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.16),
+                borderRadius: BorderRadius.circular(big ? 12 : 10),
+              ),
+              child: Icon(icon, size: big ? 22 : 18, color: color),
             ),
-            SizedBox(height: 3),
-            Text(
-              text,
-              style: TextStyle(
-                  fontSize: 13, height: 1.4, color: AppColors.textSecondary),
+            SizedBox(width: big ? 16 : 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: big ? 16 : 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: big ? 14.5 : 13,
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -212,56 +253,351 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(scan.name),
-        content: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 420),
-          child: SingleChildScrollView(
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        final wide = size.width >= _kWideBreakpoint;
+
+        // Confidence, save status and the information cards.
+        // Same content for both layouts; sizes grow on wide screens.
+        Widget bodyContent() {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.verified_outlined,
+                      size: wide ? 22 : 18, color: AppColors.brand),
+                  SizedBox(width: 8),
+                  Text(
+                    'Confidence',
+                    style: TextStyle(
+                      fontSize: wide ? 15 : 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  Spacer(),
+                  Text(
+                    '${scan.confidence}%',
+                    style: TextStyle(
+                      fontSize: wide ? 26 : 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.brandDark,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: wide ? 10 : 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: (scan.confidence / 100).clamp(0.0, 1.0),
+                  minHeight: wide ? 10 : 8,
+                  backgroundColor: AppColors.bgAccent,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.brand),
+                ),
+              ),
+              if (note != null) ...[
+                SizedBox(height: wide ? 18 : 14),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: wide ? 14 : 12, vertical: wide ? 10 : 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgAccent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle_outline,
+                          size: wide ? 18 : 16, color: AppColors.brandDark),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          note,
+                          style: TextStyle(
+                            fontSize: wide ? 14 : 12.5,
+                            color: AppColors.brandDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (info == null) ...[
+                SizedBox(height: 14),
+                Text(
+                  'More information about this plant is coming soon.',
+                  style:
+                      TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+              ],
+              section('About', info?['description'] as String?,
+                  Icons.info_outline, AppColors.brand,
+                  big: wide),
+              section('Benefits', info?['benefits'] as String?,
+                  Icons.spa_outlined, AppColors.accentBlue,
+                  big: wide),
+              section('Traditional uses', info?['traditional_uses'] as String?,
+                  Icons.menu_book_outlined, AppColors.accentPurple,
+                  big: wide),
+              section('Risks', info?['risks'] as String?,
+                  Icons.warning_amber_rounded, AppColors.accentAmber,
+                  big: wide),
+              section('Precautions', info?['precautions'] as String?,
+                  Icons.shield_outlined, AppColors.accentAmber,
+                  big: wide),
+            ],
+          );
+        }
+
+        Widget doneButton() {
+          return SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.brand,
+                foregroundColor: AppColors.onBrand,
+                elevation: 0,
+                padding: EdgeInsets.symmetric(vertical: wide ? 18 : 14),
+                textStyle: TextStyle(
+                    fontSize: wide ? 16 : 15, fontWeight: FontWeight.w700),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(kRadius),
+                ),
+              ),
+              child: Text('Done'),
+            ),
+          );
+        }
+
+        // ------------------------------------------------------------------
+        // WEB: big two-column dialog, photo on the left, details on the right.
+        // ------------------------------------------------------------------
+        if (wide) {
+          final height = (size.height - 48).clamp(480.0, 720.0).toDouble();
+          return Dialog(
+            backgroundColor: AppColors.surface,
+            clipBehavior: Clip.antiAlias,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+            insetPadding: EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+            child: SizedBox(
+              width: 980,
+              height: height,
+              child: Stack(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Left: the photo with the name on it
+                      SizedBox(
+                        width: 400,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.memory(imageBytes, fit: BoxFit.cover),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withOpacity(0.78),
+                                  ],
+                                  stops: [0.5, 1.0],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 28,
+                              right: 28,
+                              bottom: 28,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    scan.name,
+                                    style: TextStyle(
+                                      fontSize: 34,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.6,
+                                      height: 1.1,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  if (scan.latinName.isNotEmpty) ...[
+                                    SizedBox(height: 6),
+                                    Text(
+                                      scan.latinName,
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontStyle: FontStyle.italic,
+                                        color: Colors.white.withOpacity(0.9),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Right: details + button
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.fromLTRB(36, 60, 36, 12),
+                                child: bodyContent(),
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(36, 8, 36, 28),
+                              child: doneButton(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: Material(
+                      color: AppColors.bgAccent,
+                      shape: CircleBorder(),
+                      child: InkWell(
+                        customBorder: CircleBorder(),
+                        onTap: () => Navigator.of(dialogContext).pop(),
+                        child: Padding(
+                          padding: EdgeInsets.all(9),
+                          child: Icon(Icons.close,
+                              size: 20, color: AppColors.textPrimary),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // ------------------------------------------------------------------
+        // MOBILE: single column (unchanged look)
+        // ------------------------------------------------------------------
+        return Dialog(
+          backgroundColor: AppColors.surface,
+          clipBehavior: Clip.antiAlias,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          insetPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 460, maxHeight: 720),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (scan.latinName.isNotEmpty)
-                  Text(
-                    scan.latinName,
-                    style: TextStyle(fontStyle: FontStyle.italic),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          height: 250,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.memory(imageBytes, fit: BoxFit.cover),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withOpacity(0.72),
+                                    ],
+                                    stops: [0.45, 1.0],
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: Material(
+                                  color: Colors.black.withOpacity(0.35),
+                                  shape: CircleBorder(),
+                                  child: InkWell(
+                                    customBorder: CircleBorder(),
+                                    onTap: () =>
+                                        Navigator.of(dialogContext).pop(),
+                                    child: Padding(
+                                      padding: EdgeInsets.all(8),
+                                      child: Icon(Icons.close,
+                                          size: 20, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                left: 20,
+                                right: 20,
+                                bottom: 16,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      scan.name,
+                                      style: TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -0.4,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    if (scan.latinName.isNotEmpty) ...[
+                                      SizedBox(height: 2),
+                                      Text(
+                                        scan.latinName,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.white.withOpacity(0.88),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
+                          child: bodyContent(),
+                        ),
+                      ],
+                    ),
                   ),
-                SizedBox(height: 8),
-                Text('Confidence: ${scan.confidence}%'),
-                if (note != null) ...[
-                  SizedBox(height: 8),
-                  Text(
-                    note,
-                    style: TextStyle(
-                        fontSize: 13, color: AppColors.textSecondary),
-                  ),
-                ],
-                if (info == null) ...[
-                  SizedBox(height: 14),
-                  Text(
-                    'More information about this plant is coming soon.',
-                    style:
-                        TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                  ),
-                ],
-                section('About', info?['description'] as String?),
-                section('Benefits', info?['benefits'] as String?),
-                section(
-                    'Traditional uses', info?['traditional_uses'] as String?),
-                section('Risks', info?['risks'] as String?),
-                section('Precautions', info?['precautions'] as String?),
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(20, 8, 20, 20),
+                  child: doneButton(),
+                ),
               ],
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text('OK'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

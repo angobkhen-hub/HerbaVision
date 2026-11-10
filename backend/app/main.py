@@ -5,8 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from .database import Base, engine
-from .routers import auth, scans, recognition, herbs
+from . import models  # noqa: F401  (registers users and scans tables)
 from . import leaf_item_model  # noqa: F401  (registers the leaf_items table)
+from . import saved_herb_model  # noqa: F401  (registers the saved_herbs table)
+from .routers import auth, scans, recognition, herbs
 
 Base.metadata.create_all(bind=engine)
 
@@ -50,3 +52,8 @@ app.include_router(herbs.router)
 @app.get("/")
 def root():
     return {"status": "HerbaVision API is running"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}

@@ -30,7 +30,7 @@ class ApiService {
   //   flutter run --dart-define=API_BASE_URL=http://192.168.1.5:8000
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
+    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://192.168.1.18:8000',
   );
 
   /// How long login/register wait before giving up, so a stuck server never
