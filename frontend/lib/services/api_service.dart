@@ -39,7 +39,7 @@ class ApiService {
 
   /// DEMO ONLY: slows login/register so the Loading state stays on screen
   /// long enough to see and screenshot. Set to Duration.zero to turn it off.
-  static const Duration _demoDelay = Duration(seconds: 25);
+  static const Duration _demoDelay = Duration.zero;
 
   /// DEMO ONLY: true makes every login/register fail with "Can't reach the
   /// server" after the delay, so you can screenshot the Error state and press
