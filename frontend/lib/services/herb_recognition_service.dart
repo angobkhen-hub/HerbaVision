@@ -9,12 +9,20 @@ import 'api_service.dart';
 
 /// Thrown when the model isn't sure which herb this is. That usually means the
 /// plant isn't one of the herbs in the database yet.
+///
+/// If the backend sent its best guess anyway, it is available in
+/// [guessName] and [guessConfidence] (0-100).
 class PlantNotRecognizedException implements Exception {
   final String message;
-  const PlantNotRecognizedException([
+  final String? guessName;
+  final int? guessConfidence;
+
+  const PlantNotRecognizedException({
     this.message = "We couldn't identify this plant. It may not be in our "
         "database yet.",
-  ]);
+    this.guessName,
+    this.guessConfidence,
+  });
 
   @override
   String toString() => message;
@@ -59,9 +67,15 @@ class HerbRecognitionService {
     }
 
     // The model always picks one of its known herbs, so a low score means
-    // "not sure" rather than a real match.
+    // "not sure" rather than a real match. Keep the best guess if the backend
+    // sent one, so the screen can show it.
     if (data['confident'] != true) {
-      throw const PlantNotRecognizedException();
+      final guess = data['name'];
+      final conf = data['confidence'];
+      throw PlantNotRecognizedException(
+        guessName: guess is String && guess.isNotEmpty ? guess : null,
+        guessConfidence: conf is num ? conf.round() : null,
+      );
     }
 
     return HerbScan(

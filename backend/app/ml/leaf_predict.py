@@ -30,7 +30,7 @@ STATS_PATH = os.path.join(_HERE, "leaf_stats.pt")
 
 # A result counts as "in the dataset" only if ALL checks pass.
 # Tune with:  python leaf_predict.py --folder <photos of leaves NOT in the dataset>
-MIN_CONFIDENCE = 0.65   # top guess must be at least this sure (was 0.80 - too strict for real-world photos)
+MIN_CONFIDENCE = 0.55   # top guess must be at least this sure (was 0.80 - too strict for real-world photos)
 MIN_MARGIN = 0.20       # top guess must beat the 2nd guess by at least this much (was 0.30)
 DISTANCE_SCALE = 1.0    # multiplies the distance limit saved in leaf_stats.pt (lower = stricter)
 
@@ -143,7 +143,7 @@ def margin(results):
 
 
 def too_far(results):
-    """True if the leaf looks unlike all six known plants (needs leaf_stats.pt)."""
+    """True if the leaf looks unlike all known plants (needs leaf_stats.pt)."""
     d = getattr(results, "distance", None)
     return d is not None and _stats is not None and d > _stats["threshold"] * DISTANCE_SCALE
 

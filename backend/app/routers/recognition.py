@@ -9,6 +9,7 @@ import io
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from PIL import UnidentifiedImageError
 
+from ..ml import leaf_predict as lp
 from ..ml.leaf_predict import NOT_IN_DATASET_MESSAGE, is_confident, predict
 
 router = APIRouter(tags=["recognition"])
@@ -48,6 +49,24 @@ def recognize(image: UploadFile = File(...)):
 
     name, prob = guesses[0]
     confident = is_confident(guesses)
+
+    # --- debug log: shows why a photo was accepted or rejected ---
+    thr = lp._stats["threshold"] * lp.DISTANCE_SCALE if lp._stats is not None else None
+    print(
+        f"[recognize] TTA={lp.USE_TTA} "
+        f"guesses={[(n, round(p * 100, 1)) for n, p in guesses]} "
+        f"margin={lp.margin(guesses) * 100:.1f}% "
+        f"dist={guesses.distance} limit={thr} "
+        f"too_far={lp.too_far(guesses)} confident={confident}",
+        flush=True,
+    )
+    try:
+        with open("last_upload.jpg", "wb") as f:  # the exact bytes the app sent
+            f.write(data)
+    except OSError:
+        pass
+    # --------------------------------------------------------------
+
     return {
         "name": name,
         "latin_name": LATIN_NAMES.get(name, ""),

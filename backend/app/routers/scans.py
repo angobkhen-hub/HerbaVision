@@ -7,6 +7,7 @@ from ..database import get_db
 from ..models import Scan, User
 from ..schemas import ScanCreate, ScanOut, ScanStats
 from ..deps import get_current_user
+from ..saved_herb_model import SavedHerb
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -64,8 +65,11 @@ def get_stats(
         .scalar()
         or 0.0
     )
+    # Count herbs the user bookmarked in the Herb library.
     saved_to_library = (
-        user_scans.filter(Scan.saved_to_library == 1).count()
+        db.query(SavedHerb)
+        .filter(SavedHerb.user_id == current_user.id)
+        .count()
     )
 
     return ScanStats(
