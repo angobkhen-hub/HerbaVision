@@ -15,3 +15,7 @@ __pycache__/
 .env
 frontend/build/
 frontend/.dart_tool/
+
+# Local runtime artifacts
+backend/*.db
+backend/last_upload.jpg

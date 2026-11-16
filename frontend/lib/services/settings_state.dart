@@ -13,7 +13,7 @@ class SettingsState extends ChangeNotifier {
 
   bool _notifications = true;
   bool _autoSave = false;
-  bool _darkMode = false;
+  bool _darkMode = true;
 
   bool get notifications => _notifications;
   bool get autoSave => _autoSave;
@@ -23,7 +23,7 @@ class SettingsState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _notifications = prefs.getBool(_kNotifications) ?? true;
     _autoSave = prefs.getBool(_kAutoSave) ?? false;
-    _darkMode = prefs.getBool(_kDarkMode) ?? false;
+    _darkMode = prefs.getBool(_kDarkMode) ?? true;
     notifyListeners();
   }
 

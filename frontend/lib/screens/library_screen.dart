@@ -1,7 +1,9 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, prefer_const_declarations
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../theme/app_animations.dart';
 import '../theme/app_colors.dart';
+import '../theme/herba_ui.dart';
 import '../services/api_service.dart';
 import '../services/auth_state.dart';
 
@@ -87,7 +89,11 @@ class _Herb {
 // ---------------------------------------------------------------------------
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
+  /// When true the page renders inside the app shell, without its own
+  /// Scaffold, app bar or background.
+  final bool embedded;
+
+  const LibraryScreen({super.key, this.embedded = false});
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -255,73 +261,113 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   // ---- build --------------------------------------------------------------
 
+  /// The searchable list, shared by the standalone page and the app shell.
+  Widget _buildContentColumn(List<_Herb> visible) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSearch(),
+                  const SizedBox(height: 14),
+                  _buildFilters(),
+                  const SizedBox(height: 14),
+                  if (!_loading && _error == null)
+                    MicroLabel(
+                      _filter == _all && _query.isEmpty
+                          ? '${_herbs.length} plants · ${_saved.length} saved'
+                          : '${visible.length} of ${_herbs.length} plants',
+                      color: AppColors.textMuted,
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+            Expanded(child: _buildContent(visible)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Herb library',
+              style: TextStyle(
+                fontFamily: 'Sora',
+                fontWeight: FontWeight.w800,
+                fontSize: 19,
+                letterSpacing: -0.5,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        foregroundColor: AppColors.textPrimary,
-        title: Text(
-          'Herb library',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+    // Embedded in the persistent app shell: no separate page chrome.
+    if (widget.embedded) {
+      return SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInlineHeader(),
+            Expanded(child: _buildContentColumn(visible)),
+          ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
-            icon: Icon(Icons.refresh),
-          ),
-          SizedBox(width: 4),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.bgTop, AppColors.bg, AppColors.bgBottom],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: 1120),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(20, 4, 20, 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSearch(),
-                        SizedBox(height: 14),
-                        _buildFilters(),
-                        SizedBox(height: 12),
-                        if (!_loading && _error == null)
-                          Text(
-                            _filter == _all && _query.isEmpty
-                                ? '${_herbs.length} plants, ${_saved.length} saved'
-                                : '${visible.length} of ${_herbs.length} plants',
-                            style: TextStyle(
-                                fontSize: 13, color: AppColors.textSecondary),
-                          ),
-                        SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
-                  Expanded(child: _buildContent(visible)),
-                ],
-              ),
+      );
+    }
+
+    return HerbaBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          foregroundColor: AppColors.textPrimary,
+          title: Text(
+            'Herb library',
+            style: TextStyle(
+              fontFamily: 'Sora',
+              fontWeight: FontWeight.w800,
+              fontSize: 19,
+              letterSpacing: -0.5,
             ),
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _loading ? null : _load,
+              icon: Icon(Icons.refresh_rounded),
+            ),
+            SizedBox(width: 4),
+          ],
         ),
+        body: SafeArea(child: _buildContentColumn(visible)),
       ),
     );
   }
@@ -378,15 +424,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 selected: _filter == o,
                 onSelected: (_) => setState(() => _filter = o),
                 showCheckmark: false,
-                backgroundColor: AppColors.surface,
-                selectedColor: AppColors.brand,
+                backgroundColor: AppColors.glass,
+                selectedColor: AppColors.lime,
                 side: BorderSide(
-                  color: _filter == o ? AppColors.brand : AppColors.border,
+                  color: _filter == o
+                      ? AppColors.lime.withAlpha(120)
+                      : AppColors.glassBorder,
                 ),
                 labelStyle: TextStyle(
-                  fontSize: 13,
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: 11,
+                  letterSpacing: 0.6,
                   fontWeight: FontWeight.w600,
-                  color: _filter == o ? AppColors.onBrand : AppColors.textSecondary,
+                  color: _filter == o
+                      ? AppColors.onBrand
+                      : AppColors.textSecondary,
                 ),
               ),
             ),
@@ -477,11 +529,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
         itemCount: visible.length,
         itemBuilder: (context, i) {
           final herb = visible[i];
-          return _HerbCard(
-            herb: herb,
-            saved: _isSaved(herb),
-            onTap: () => _openDetail(herb),
-            onToggleSaved: () => _toggleSaved(herb),
+          return FadeSlideIn(
+            delay: Duration(milliseconds: 45 * (i % 8)),
+            offset: const Offset(0, 0.08),
+            child: HoverLift(
+              child: _HerbCard(
+                herb: herb,
+                saved: _isSaved(herb),
+                onTap: () => _openDetail(herb),
+                onToggleSaved: () => _toggleSaved(herb),
+              ),
+            ),
           );
         },
       ),
@@ -534,19 +592,27 @@ class _HerbCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
           padding: EdgeInsets.fromLTRB(16, 14, 6, 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
+            gradient: AppColors.glassGradient,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: saved
+                  ? AppColors.lime.withAlpha(AppColors.isDark ? 90 : 70)
+                  : AppColors.glassBorder,
+            ),
             boxShadow: [
               BoxShadow(
-                  color: AppColors.shadow, blurRadius: 16, offset: Offset(0, 6)),
+                  color: AppColors.shadow,
+                  blurRadius: 22,
+                  spreadRadius: -8,
+                  offset: Offset(0, 10)),
             ],
           ),
           child: Column(
@@ -560,15 +626,20 @@ class _HerbCard extends StatelessWidget {
                     height: 42,
                     decoration: BoxDecoration(
                       color: herb.isHerbal
-                          ? AppColors.bgAccent
+                          ? AppColors.brand.withAlpha(AppColors.isDark ? 26 : 18)
                           : AppColors.bgWarning,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: herb.isHerbal
+                            ? AppColors.brand.withAlpha(60)
+                            : AppColors.textWarning.withAlpha(60),
+                      ),
                     ),
                     child: Icon(
                       herb.isHerbal ? Icons.eco : Icons.local_florist_outlined,
                       size: 22,
                       color: herb.isHerbal
-                          ? AppColors.brand
+                          ? AppColors.textAccent
                           : AppColors.textWarning,
                     ),
                   ),
@@ -584,8 +655,10 @@ class _HerbCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
+                              fontFamily: 'Sora',
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
                               color: AppColors.textPrimary,
                             ),
                           ),
@@ -610,7 +683,7 @@ class _HerbCard extends StatelessWidget {
                     onPressed: onToggleSaved,
                     icon: Icon(
                       saved ? Icons.bookmark : Icons.bookmark_border,
-                      color: saved ? AppColors.brand : AppColors.textMuted,
+                      color: saved ? AppColors.lime : AppColors.textMuted,
                     ),
                   ),
                 ],
@@ -639,9 +712,11 @@ class _HerbCard extends StatelessWidget {
                     child: Text(
                       'View details',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 10,
+                        letterSpacing: 1.0,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.brand,
+                        color: AppColors.textAccent,
                       ),
                     ),
                   ),

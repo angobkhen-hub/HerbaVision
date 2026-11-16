@@ -1,10 +1,13 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, prefer_const_declarations
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/herb_scan.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_animations.dart';
+import '../theme/herba_ui.dart';
 import '../widgets/scan_row.dart';
 import '../widgets/weekly_chart.dart';
 import '../services/auth_state.dart';
@@ -34,6 +37,11 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  // The app shell keeps one route and only swaps the content area, so the
+  // sidebar never disappears while the user moves between sections.
+  int _section = 0; // 0 dashboard, 1 library, 2 history, 3 report, 4 settings
+  final Set<int> _visited = {0};
+
   bool _loading = false;
   String? _error;
   String? _loadedForToken; // guards against duplicate/stale fetches
@@ -150,9 +158,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openUploadFlow() async {
-    // UploadScreen now returns the scan result AND the photo the user sent.
-    final upload = await Navigator.of(context).push<UploadResult>(
-      MaterialPageRoute(builder: (_) => UploadScreen()),
+    // The scanner opens as a popup over the current section instead of a
+    // pushed page, so the shell and its navigation stay in place.
+    final upload = await showDialog<UploadResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext);
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: media.size.width >= _kWideBreakpoint ? 48 : 16,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 700,
+              maxHeight: media.size.height - 48,
+            ),
+            child: const UploadScreen(popup: true),
+          ),
+        );
+      },
     );
     if (upload == null || !mounted) return;
     final result = upload.scan;
@@ -282,7 +310,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: TextStyle(
                       fontSize: wide ? 26 : 18,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.brandDark,
+                      color: AppColors.textAccent,
                     ),
                   ),
                 ],
@@ -310,14 +338,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.check_circle_outline,
-                          size: wide ? 18 : 16, color: AppColors.brandDark),
+                          size: wide ? 18 : 16, color: AppColors.textSuccess),
                       SizedBox(width: 8),
                       Flexible(
                         child: Text(
                           note,
                           style: TextStyle(
                             fontSize: wide ? 14 : 12.5,
-                            color: AppColors.brandDark,
+                            color: AppColors.textSuccess,
                           ),
                         ),
                       ),
@@ -601,29 +629,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _openLibrary() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => LibraryScreen()),
-    );
+  /// Switches the visible section without pushing a new route, so the
+  /// navigation rail stays in place.
+  void _selectSection(int index) {
+    if (_section == index) return;
+    setState(() {
+      _section = index;
+      _visited.add(index);
+    });
   }
 
-  void _openHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => HistoryScreen(scans: _recentScans)),
-    );
-  }
-
-  void _openReportForm() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ReportFormScreen()),
-    );
-  }
-
-  void _openSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SettingsScreen()),
-    );
-  }
+  void _openHistory() => _selectSection(2);
 
   // ---------------------------------------------------------------------
   // DISPLAY: picks the layout from the available width
@@ -646,6 +662,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// The content for one navigation section. Every page is embedded in the
+  /// shell, so it renders without its own app bar or push transition.
+  Widget _sectionPage(int index, {required bool isWide}) {
+    switch (index) {
+      case 1:
+        return const LibraryScreen(embedded: true);
+      case 2:
+        return HistoryScreen(scans: _recentScans, embedded: true);
+      case 3:
+        return const ReportFormScreen(embedded: true);
+      case 4:
+        return const SettingsScreen(embedded: true);
+      case 0:
+      default:
+        return _buildBody(isWide: isWide);
+    }
+  }
+
+  /// Keeps every visited section alive so scroll position, search text and
+  /// loaded data survive while switching tabs.
+  Widget _buildSections({required bool isWide}) {
+    return IndexedStack(
+      index: _section,
+      children: [
+        for (var i = 0; i < 5; i++)
+          SizedBox.expand(
+            child: _visited.contains(i)
+                ? _sectionPage(i, isWide: isWide)
+                : const SizedBox.shrink(),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _AppBackground(
@@ -653,7 +703,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= _kWideBreakpoint;
 
-          // WEB: permanent sidebar + wide content area.
+          // WEB: permanent sidebar + content that swaps in place.
           if (isWide) {
             return Scaffold(
               backgroundColor: Colors.transparent,
@@ -661,31 +711,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    width: 290,
+                    width: 286,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [AppColors.surface, AppColors.bgBottom],
+                        colors: AppColors.isDark
+                            ? const [Color(0xF20B1510), Color(0xF2070D09)]
+                            : const [Color(0xFAFFFFFF), Color(0xF2EFF6ED)],
                       ),
-                      border:
-                          Border(right: BorderSide(color: AppColors.border)),
+                      border: Border(
+                        right: BorderSide(color: AppColors.glassBorder),
+                      ),
                     ),
                     child: _SidebarContent(
-                      onDashboard: () {},
-                      onLibrary: _openLibrary,
-                      onHistory: _openHistory,
-                      onReport: _openReportForm,
-                      onSettings: _openSettings,
+                      selectedIndex: _section,
+                      onSelect: _selectSection,
                     ),
                   ),
-                  Expanded(child: SafeArea(child: _buildBody(isWide: true))),
+                  Expanded(
+                    child: SafeArea(child: _buildSections(isWide: true)),
+                  ),
                 ],
               ),
             );
           }
 
-          // MOBILE: app bar + drawer + single scrolling column.
+          // MOBILE: app bar + a bottom bar that is always visible.
           return Scaffold(
             backgroundColor: Colors.transparent,
             appBar: AppBar(
@@ -708,29 +760,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
-            drawer: Drawer(
-              backgroundColor: AppColors.surface,
-              child: _SidebarContent(
-                onDashboard: () => Navigator.pop(context),
-                onLibrary: () {
-                  Navigator.pop(context);
-                  _openLibrary();
-                },
-                onHistory: () {
-                  Navigator.pop(context);
-                  _openHistory();
-                },
-                onReport: () {
-                  Navigator.pop(context);
-                  _openReportForm();
-                },
-                onSettings: () {
-                  Navigator.pop(context);
-                  _openSettings();
-                },
-              ),
+            body: SafeArea(child: _buildSections(isWide: false)),
+            bottomNavigationBar: _MobileNav(
+              selectedIndex: _section,
+              onSelect: _selectSection,
             ),
-            body: SafeArea(child: _buildBody(isWide: false)),
           );
         },
       ),
@@ -742,64 +776,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 // Display widgets
 // ---------------------------------------------------------------------------
 
-/// Page background: soft gradient + faint decorative blobs and a big leaf.
+/// Page background: aurora orbs, blueprint grid and drifting leaves.
 class _AppBackground extends StatelessWidget {
   final Widget child;
   const _AppBackground({required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.bgTop, AppColors.bg, AppColors.bgBottom],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -90,
-            right: -70,
-            child: IgnorePointer(
-              child: _Blob(size: 300, color: AppColors.brand.withOpacity(0.08)),
-            ),
-          ),
-          Positioned(
-            bottom: -120,
-            left: -90,
-            child: IgnorePointer(
-              child: _Blob(
-                  size: 340, color: AppColors.brandLight.withOpacity(0.10)),
-            ),
-          ),
-          Positioned(
-            right: 36,
-            bottom: 28,
-            child: IgnorePointer(
-              child: Icon(Icons.eco,
-                  size: 190, color: AppColors.brand.withOpacity(0.05)),
-            ),
-          ),
-          Positioned.fill(child: child),
-        ],
-      ),
-    );
-  }
-}
-
-class _Blob extends StatelessWidget {
-  final double size;
-  final Color color;
-  const _Blob({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    return HerbaBackdrop(
+      intensity: AppColors.dark ? 1.0 : 1.1,
+      child: child,
     );
   }
 }
@@ -810,39 +796,17 @@ class _LogoMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.brandLight, AppColors.brandDark],
-        ),
-        borderRadius: BorderRadius.circular(size * 0.3),
-        boxShadow: [
-          BoxShadow(
-              color: AppColors.shadow, blurRadius: 8, offset: Offset(0, 3)),
-        ],
-      ),
-      child: Icon(Icons.eco, size: size * 0.6, color: AppColors.onBrand),
-    );
+    return HerbaLogo(size: size);
   }
 }
 
 class _SidebarContent extends StatelessWidget {
-  final VoidCallback onDashboard;
-  final VoidCallback onLibrary;
-  final VoidCallback onHistory;
-  final VoidCallback onReport;
-  final VoidCallback onSettings;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
 
   const _SidebarContent({
-    required this.onDashboard,
-    required this.onLibrary,
-    required this.onHistory,
-    required this.onReport,
-    required this.onSettings,
+    required this.selectedIndex,
+    required this.onSelect,
   });
 
   @override
@@ -852,104 +816,200 @@ class _SidebarContent extends StatelessWidget {
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
     return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, 24, 20, 28),
-            child: Row(
-              children: [
-                _LogoMark(size: 32),
-                SizedBox(width: 10),
-                Text(
-                  'HerbaVision',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _DrawerItem(
-            icon: Icons.home_outlined,
-            label: 'Dashboard',
-            selected: true,
-            onTap: onDashboard,
-          ),
-          _DrawerItem(
-            icon: Icons.menu_book_outlined,
-            label: 'Herb library',
-            onTap: onLibrary,
-          ),
-          _DrawerItem(
-            icon: Icons.history,
-            label: 'History',
-            onTap: onHistory,
-          ),
-          _DrawerItem(
-            icon: Icons.report_outlined,
-            label: 'Report form',
-            onTap: onReport,
-          ),
-          _DrawerItem(
-            icon: Icons.settings_outlined,
-            label: 'Settings',
-            onTap: onSettings,
-          ),
-          Spacer(),
-          Container(
-            margin: EdgeInsets.all(12),
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.bgAccent,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: AppColors.brand,
-                  child: Text(
-                    initial,
-                    style: TextStyle(
-                      color: AppColors.onBrand,
-                      fontWeight: FontWeight.w700,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 22, 14, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  HerbaLogo(size: 38),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'HerbaVision',
+                          style: TextStyle(
+                            fontFamily: 'Sora',
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        MicroLabel(
+                          'Botanical AI',
+                          color: AppColors.textMuted,
+                          dot: false,
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        authState.isGuest ? 'Browsing as guest' : 'Signed in',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 30),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: MicroLabel('Workspace', color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 10),
+            _DrawerItem(
+              icon: Icons.grid_view_rounded,
+              label: 'Dashboard',
+              selected: selectedIndex == 0,
+              onTap: () => onSelect(0),
+            ),
+            _DrawerItem(
+              icon: Icons.local_florist_outlined,
+              label: 'Herb library',
+              selected: selectedIndex == 1,
+              onTap: () => onSelect(1),
+            ),
+            _DrawerItem(
+              icon: Icons.history_rounded,
+              label: 'History',
+              selected: selectedIndex == 2,
+              onTap: () => onSelect(2),
+            ),
+            _DrawerItem(
+              icon: Icons.assignment_outlined,
+              label: 'Report form',
+              selected: selectedIndex == 3,
+              onTap: () => onSelect(3),
+            ),
+            _DrawerItem(
+              icon: Icons.tune_rounded,
+              label: 'Settings',
+              selected: selectedIndex == 4,
+              onTap: () => onSelect(4),
+            ),
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.emerald.withAlpha(AppColors.isDark ? 22 : 16),
+                      AppColors.surface,
                     ],
                   ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.emerald.withAlpha(AppColors.isDark ? 55 : 40),
+                  ),
                 ),
-              ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const HerbaPill('Vision core online'),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor:
+                              AppColors.emerald.withAlpha(AppColors.isDark ? 40 : 28),
+                          child: Text(
+                            initial,
+                            style: TextStyle(
+                              fontFamily: 'Sora',
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                authState.isGuest
+                                    ? 'Browsing as guest'
+                                    : 'Signed in',
+                                style: TextStyle(
+                                  fontFamily: 'JetBrainsMono',
+                                  fontSize: 9.5,
+                                  letterSpacing: 0.6,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+
+  }
+}
+
+/// Fixed bottom navigation used on narrow (phone-sized) screens.
+class _MobileNav extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  const _MobileNav({required this.selectedIndex, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return NavigationBar(
+      selectedIndex: selectedIndex,
+      onDestinationSelected: onSelect,
+      backgroundColor: AppColors.surface,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: AppColors.lime.withAlpha(AppColors.isDark ? 55 : 45),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.grid_view_rounded),
+          label: 'Dashboard',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.local_florist_outlined),
+          label: 'Library',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.history_rounded),
+          label: 'History',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.assignment_outlined),
+          label: 'Report',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.tune_rounded),
+          label: 'Settings',
+        ),
+      ],
     );
   }
 }
@@ -991,94 +1051,97 @@ class _DashboardBody extends StatelessWidget {
     final weekTotal = weeklyActivity.fold<int>(0, (a, b) => a + b);
     final name = authState.userName ?? 'there';
 
-    final uploadButton = ElevatedButton.icon(
+    final uploadButton = NeonButton(
       onPressed: onUpload,
-      icon: Icon(Icons.upload_outlined, size: 20),
-      label: Text('Upload a leaf photo'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.brandDark,
-        elevation: 0,
-        minimumSize: Size(0, 52),
-        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(kRadius + 4),
+      icon: Icons.add_a_photo_outlined,
+      label: 'Scan a leaf',
+    );
+
+    final stats = <Widget>[
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 80),
+        child: _StatTile(
+          label: 'Total scans',
+          value: loading ? '—' : '$totalScans',
+          animateTo: loading ? null : totalScans,
+          icon: Icons.document_scanner_outlined,
+          color: AppColors.lime,
+        ),
+      ),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 150),
+        child: _StatTile(
+          label: 'Species identified',
+          value: loading ? '—' : '$speciesIdentified',
+          animateTo: loading ? null : speciesIdentified,
+          icon: Icons.local_florist_outlined,
+          color: AppColors.cyan,
+        ),
+      ),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 220),
+        child: _StatTile(
+          label: 'Avg. confidence',
+          value: loading
+              ? '—'
+              : (hasAnyScans ? '${avgConfidence.round()}%' : '—'),
+          animateTo: loading || !hasAnyScans ? null : avgConfidence,
+          suffix: '%',
+          icon: Icons.verified_outlined,
+          color: AppColors.accentAmber,
+        ),
+      ),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 290),
+        child: _StatTile(
+          label: 'Saved to library',
+          value: loading ? '—' : '$savedToLibrary',
+          animateTo: loading ? null : savedToLibrary,
+          icon: Icons.bookmark_border_rounded,
+          color: AppColors.accentPurple,
+        ),
+      ),
+    ];
+
+    final recentPanel = FadeSlideIn(
+      delay: const Duration(milliseconds: 320),
+      child: _Panel(
+        title: 'Recent scans',
+        trailing: recentScans.isEmpty
+            ? null
+            : TextButton(
+                onPressed: onViewAll,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.brand,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text('View all'),
+              ),
+        child: _RecentScansContent(
+          loading: loading,
+          isGuest: authState.isGuest,
+          scans: recentScans,
         ),
       ),
     );
 
-    final stats = <Widget>[
-      _StatTile(
-        label: 'Total scans',
-        value: loading ? '—' : '$totalScans',
-        icon: Icons.document_scanner_outlined,
-        color: AppColors.brand,
-      ),
-      _StatTile(
-        label: 'Species identified',
-        value: loading ? '—' : '$speciesIdentified',
-        icon: Icons.spa_outlined,
-        color: AppColors.accentBlue,
-      ),
-      _StatTile(
-        label: 'Avg. confidence',
-        value:
-            loading ? '—' : (hasAnyScans ? '${avgConfidence.round()}%' : '—'),
-        icon: Icons.verified_outlined,
-        color: AppColors.accentAmber,
-      ),
-      _StatTile(
-        label: 'Saved to library',
-        value: loading ? '—' : '$savedToLibrary',
-        icon: Icons.bookmark_border,
-        color: AppColors.accentPurple,
-      ),
-    ];
-
-    final recentPanel = _Panel(
-      title: 'Recent scans',
-      trailing: recentScans.isEmpty
-          ? null
-          : TextButton(
-              onPressed: onViewAll,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.brand,
-                visualDensity: VisualDensity.compact,
-              ),
-              child: Text('View all'),
-            ),
-      child: _RecentScansContent(
-        loading: loading,
-        isGuest: authState.isGuest,
-        scans: recentScans,
-      ),
-    );
-
-    final weeklyPanel = _Panel(
-      title: 'Weekly scan activity',
-      trailing: loading || weekTotal == 0
-          ? null
-          : Container(
-              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.bgAccent,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
+    final weeklyPanel = FadeSlideIn(
+      delay: const Duration(milliseconds: 400),
+      child: _Panel(
+        title: 'Weekly scan activity',
+        trailing: loading || weekTotal == 0
+            ? null
+            : HerbaPill(
                 '$weekTotal this week',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.brandDark,
-                ),
+                icon: Icons.bolt_rounded,
+                color: AppColors.lime,
               ),
-            ),
-      child: loading
-          ? _InlineLoading()
-          : weekTotal == 0
-              ? _EmptyNote('No scans in the last 7 days.')
-              : WeeklyChart(values: weeklyActivity),
+        child: loading
+            ? _InlineLoading()
+            : weekTotal == 0
+                ? _EmptyNote('No scans in the last 7 days.')
+                : WeeklyChart(values: weeklyActivity),
+      ),
     );
 
     return RefreshIndicator(
@@ -1143,8 +1206,9 @@ class _DashboardBody extends StatelessWidget {
   }
 }
 
-/// Green gradient header with greeting + upload button.
-class _HeroBanner extends StatelessWidget {
+/// Green gradient header with greeting + upload button, a slow light sweep and
+/// gently bobbing leaves.
+class _HeroBanner extends StatefulWidget {
   final bool isWide;
   final String title;
   final String subtitle;
@@ -1160,99 +1224,289 @@ class _HeroBanner extends StatelessWidget {
   });
 
   @override
+  State<_HeroBanner> createState() => _HeroBannerState();
+}
+
+class _HeroBannerState extends State<_HeroBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final wide = widget.isWide;
+    final reticleSize = wide ? 250.0 : 190.0;
+
     final texts = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            MicroLabel('Live session', color: AppColors.emerald),
+            const SizedBox(width: 12),
+            Container(
+              width: 1,
+              height: 12,
+              color: Colors.white.withAlpha(40),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                'LEAF SCANNER READY',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: 9.5,
+                  letterSpacing: 1.4,
+                  color: Colors.white.withAlpha(140),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
         Text(
-          title,
+          widget.title,
           style: TextStyle(
-            fontSize: isWide ? 28 : 22,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.4,
+            fontFamily: 'Sora',
+            fontSize: wide ? 34 : 26,
+            height: 1.08,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.2,
             color: Colors.white,
           ),
         ),
-        SizedBox(height: 6),
-        Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: 14,
-            height: 1.4,
-            color: Colors.white.withOpacity(0.85),
+        const SizedBox(height: 10),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: wide ? 520 : 600),
+          child: Text(
+            widget.subtitle,
+            style: TextStyle(
+              fontFamily: 'Sora',
+              fontSize: 14.5,
+              height: 1.5,
+              color: Colors.white.withAlpha(200),
+            ),
           ),
+        ),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: const [
+            HerbaPill('Vision core online'),
+            HerbaPill('6 species indexed', icon: Icons.eco_outlined),
+            HerbaPill('Real-time', icon: Icons.bolt_rounded),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            PressableScale(child: widget.action),
+            if (wide) ...[
+              const SizedBox(width: 10),
+              _GlassIconButton(
+                tooltip: 'Refresh',
+                icon: Icons.refresh_rounded,
+                onPressed: widget.onRefresh,
+              ),
+            ],
+          ],
         ),
       ],
     );
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.brandDark, AppColors.brand, AppColors.brandLight],
-        ),
-        boxShadow: [
-          BoxShadow(
-              color: Color(0x332F7A4F), blurRadius: 24, offset: Offset(0, 10)),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -24,
-              top: -28,
-              child: Icon(Icons.eco,
-                  size: 170, color: Colors.white.withOpacity(0.10)),
+    return FadeSlideIn(
+      offset: const Offset(0, 0.06),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(26),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF123020), Color(0xFF0A1B12)],
+          ),
+          border: Border.all(color: AppColors.emerald.withAlpha(45)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.emerald.withAlpha(AppColors.isDark ? 34 : 20),
+              blurRadius: 46,
+              spreadRadius: -12,
+              offset: const Offset(0, 18),
             ),
-            Positioned(
-              right: 120,
-              bottom: -40,
-              child: Icon(Icons.local_florist,
-                  size: 100, color: Colors.white.withOpacity(0.07)),
-            ),
-            Padding(
-              padding: EdgeInsets.all(isWide ? 28 : 20),
-              child: isWide
-                  ? Row(
-                      children: [
-                        Expanded(child: texts),
-                        // Pull-to-refresh doesn't work with a mouse, so web
-                        // gets an explicit refresh button.
-                        IconButton(
-                          tooltip: 'Refresh',
-                          color: Colors.white,
-                          onPressed: onRefresh,
-                          icon: Icon(Icons.refresh),
-                        ),
-                        SizedBox(width: 8),
-                        action,
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        texts,
-                        SizedBox(height: 16),
-                        SizedBox(width: double.infinity, child: action),
-                      ],
-                    ),
+            BoxShadow(
+              color: AppColors.shadow,
+              blurRadius: 24,
+              offset: const Offset(0, 12),
             ),
           ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(26),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              return AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  final t = _controller.value;
+                  final bob = math.sin(t * math.pi * 2);
+                  return Stack(
+                    children: [
+                      // Aurora glow behind the reticle.
+                      Positioned(
+                        right: -70,
+                        top: -90 + bob * 6,
+                        child: Container(
+                          width: 340,
+                          height: 340,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                AppColors.emerald.withAlpha(60),
+                                AppColors.lime.withAlpha(16),
+                                Colors.transparent,
+                              ],
+                              stops: const [0.0, 0.45, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Technical reticle.
+                      Positioned(
+                        right: wide ? 36 : -58,
+                        top: wide ? null : -42,
+                        bottom: wide ? 12 : null,
+                        child: Opacity(
+                          opacity: wide ? 0.95 : 0.5,
+                          child: ScanReticle(
+                            size: reticleSize,
+                            color: AppColors.emerald,
+                          ),
+                        ),
+                      ),
+                      // Glass sheen sweeping across the card.
+                      Positioned(
+                        left: -220 + (width + 440) * t,
+                        top: -120,
+                        child: Transform.rotate(
+                          angle: -0.32,
+                          child: Container(
+                            width: 150,
+                            height: 420,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.white.withAlpha(0),
+                                  Colors.white.withAlpha(18),
+                                  Colors.white.withAlpha(0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Top hairline.
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.lime.withAlpha(0),
+                                AppColors.lime.withAlpha(120),
+                                AppColors.emerald.withAlpha(0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.all(wide ? 32 : 22),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: wide ? 660 : double.infinity,
+                          ),
+                          child: texts,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 }
 
-/// Stat card with a tinted icon badge and a soft shadow.
+/// Small translucent icon button used on top of the hero card.
+class _GlassIconButton extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  const _GlassIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white.withAlpha(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Colors.white.withAlpha(40)),
+        ),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Icon(icon, size: 20, color: Colors.white.withAlpha(220)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Stat card with a tinted icon badge, a soft glow and a count-up number.
 class _StatTile extends StatelessWidget {
   final String label;
   final String value;
+
+  /// When set, the number counts up from 0 to this value.
+  final num? animateTo;
+  final String suffix;
   final IconData icon;
   final Color color;
 
@@ -1261,58 +1515,112 @@ class _StatTile extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.color,
+    this.animateTo,
+    this.suffix = '',
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-              color: AppColors.shadow, blurRadius: 16, offset: Offset(0, 6)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 20, color: color),
+    final valueStyle = TextStyle(
+      fontFamily: 'Sora',
+      fontSize: 30,
+      height: 1.05,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -1.0,
+      color: AppColors.textPrimary,
+    );
+
+    return HoverLift(
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.alphaBlend(
+                color.withAlpha(AppColors.isDark ? 22 : 12),
+                AppColors.surface,
+              ),
+              AppColors.surface,
+            ],
           ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: color.withAlpha(AppColors.isDark ? 48 : 34),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: color.withAlpha(AppColors.isDark ? 16 : 8),
+              blurRadius: 26,
+              spreadRadius: -8,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textSecondary),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(AppColors.isDark ? 26 : 20),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: color.withAlpha(60)),
+                  ),
+                  child: Icon(icon, size: 20, color: color),
                 ),
-                SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: MicroLabel(
+                    label,
+                    color: AppColors.textSecondary,
+                    dot: false,
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 22),
+            SizedBox(
+              height: 38,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: animateTo == null
+                    ? Text(value, style: valueStyle)
+                    : AnimatedCounter(
+                        value: animateTo!,
+                        suffix: suffix,
+                        style: valueStyle,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(100),
+              child: SizedBox(
+                height: 3,
+                child: Stack(
+                  children: [
+                    Container(color: AppColors.border),
+                    FractionallySizedBox(
+                      widthFactor: 0.42,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [color.withAlpha(120), color],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1365,7 +1673,17 @@ class _RecentScansContent extends StatelessWidget {
     }
 
     return Column(
-      children: scans.map((scan) => ScanRow(scan: scan)).toList(),
+      children: [
+        for (var i = 0; i < scans.length; i++)
+          FadeSlideIn(
+            delay: Duration(milliseconds: 60 * i),
+            offset: const Offset(0.06, 0),
+            child: ScanRow(
+              scan: scans[i],
+              showDivider: i != scans.length - 1,
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1415,33 +1733,34 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tint = AppColors.danger;
     return Container(
       width: double.infinity,
-      margin: EdgeInsets.only(bottom: 16),
-      padding: EdgeInsets.fromLTRB(14, 6, 6, 6),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.shade200),
+        color: tint.withAlpha(AppColors.isDark ? 26 : 16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tint.withAlpha(80)),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 20, color: Colors.red.shade700),
-          SizedBox(width: 10),
+          Icon(Icons.error_outline, size: 20, color: tint),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13.5,
                 fontWeight: FontWeight.w500,
-                color: Colors.red.shade800,
+                color: AppColors.textPrimary,
               ),
             ),
           ),
           TextButton(
             onPressed: onRetry,
-            style: TextButton.styleFrom(foregroundColor: Colors.red.shade800),
-            child: Text('Try again'),
+            style: TextButton.styleFrom(foregroundColor: tint),
+            child: const Text('Try again'),
           ),
         ],
       ),
@@ -1464,30 +1783,67 @@ class _DrawerItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.brand : AppColors.textSecondary;
+    final color = selected ? AppColors.lime : AppColors.textSecondary;
 
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Material(
-        color: selected ? AppColors.bgAccent : Colors.transparent,
-        borderRadius: BorderRadius.circular(kRadius),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(13),
         child: InkWell(
-          borderRadius: BorderRadius.circular(kRadius),
+          borderRadius: BorderRadius.circular(13),
           onTap: onTap,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+          child: AnimatedContainer(
+            duration: HerbaMotion.fast,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? LinearGradient(
+                      colors: [
+                        AppColors.lime.withAlpha(AppColors.isDark ? 26 : 20),
+                        AppColors.lime.withAlpha(0),
+                      ],
+                    )
+                  : null,
+              borderRadius: BorderRadius.circular(13),
+              border: selected
+                  ? Border.all(
+                      color: AppColors.lime.withAlpha(AppColors.isDark ? 55 : 45),
+                    )
+                  : null,
+            ),
             child: Row(
               children: [
                 Icon(icon, size: 20, color: color),
-                SizedBox(width: 12),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected ? AppColors.textPrimary : color,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: 'Sora',
+                      fontSize: 13.5,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500,
+                      color:
+                          selected ? AppColors.textPrimary : color,
+                    ),
                   ),
                 ),
+                if (selected)
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: AppColors.lime,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.lime.withAlpha(150),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1506,18 +1862,9 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-              color: AppColors.shadow, blurRadius: 18, offset: Offset(0, 8)),
-        ],
-      ),
+    return GlassPanel(
+      padding: const EdgeInsets.all(20),
+      radius: 20,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1525,12 +1872,29 @@ class _Panel extends StatelessWidget {
             height: 32,
             child: Row(
               children: [
+                Container(
+                  width: 3,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    gradient: AppColors.brandGradient,
+                    borderRadius: BorderRadius.circular(100),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.emerald.withAlpha(120),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     title,
                     style: TextStyle(
+                      fontFamily: 'Sora',
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                       color: AppColors.textPrimary,
                     ),
                   ),
@@ -1539,7 +1903,7 @@ class _Panel extends StatelessWidget {
               ],
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 14),
           child,
         ],
       ),

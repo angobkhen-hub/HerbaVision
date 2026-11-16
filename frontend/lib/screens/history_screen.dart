@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import '../models/herb_scan.dart';
 import '../services/api_service.dart';
 import '../services/auth_state.dart';
+import '../theme/app_animations.dart';
 import '../theme/app_colors.dart';
+import '../theme/herba_ui.dart';
 import '../widgets/scan_row.dart';
 
 const _months = [
@@ -18,7 +20,15 @@ const _months = [
 class HistoryScreen extends StatefulWidget {
   final List<HerbScan> scans;
 
-  const HistoryScreen({super.key, this.scans = const []});
+  /// When true the page renders inside the app shell, without its own
+  /// Scaffold, app bar or background.
+  final bool embedded;
+
+  const HistoryScreen({
+    super.key,
+    this.scans = const [],
+    this.embedded = false,
+  });
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -139,34 +149,65 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   // ---- build --------------------------------------------------------------
 
+  Widget _buildInlineHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 12, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Scan history',
+              style: TextStyle(
+                fontFamily: 'Sora',
+                fontWeight: FontWeight.w800,
+                fontSize: 19,
+                letterSpacing: -0.5,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        foregroundColor: AppColors.textPrimary,
-        title: const Text(
-          'Scan history',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+    // Embedded in the persistent app shell: no separate page chrome.
+    if (widget.embedded) {
+      return SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInlineHeader(),
+            Expanded(child: _buildBody()),
+          ],
         ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: AppColors.textPrimary,
+        title: const Text('Scan history'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
           ),
           const SizedBox(width: 4),
         ],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.bgTop, AppColors.bg, AppColors.bgBottom],
-          ),
-        ),
+      body: HerbaBackdrop(
         child: SafeArea(child: _buildBody()),
       ),
     );
@@ -247,7 +288,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         message: 'Try a different name or change the filter.',
                       ),
                     ),
-                  for (final entry in groups.entries) _buildGroup(entry.key, entry.value),
+                  for (var g = 0; g < groups.entries.length; g++)
+                    FadeSlideIn(
+                      delay: Duration(milliseconds: 60 * (g > 6 ? 6 : g)),
+                      offset: const Offset(0, 0.06),
+                      child: _buildGroup(
+                        groups.entries.elementAt(g).key,
+                        groups.entries.elementAt(g).value,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -366,12 +415,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.border),
+          gradient: AppColors.glassGradient,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.glassBorder),
           boxShadow: [
             BoxShadow(
-                color: AppColors.shadow, blurRadius: 16, offset: const Offset(0, 6)),
+                color: AppColors.shadow,
+                blurRadius: 24,
+                spreadRadius: -8,
+                offset: const Offset(0, 10)),
           ],
         ),
         child: Column(
@@ -382,15 +434,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Text(
                   _dayLabel(day),
                   style: TextStyle(
+                    fontFamily: 'Sora',
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
                     color: AppColors.textPrimary,
                   ),
                 ),
                 const Spacer(),
                 Text(
                   scans.length == 1 ? '1 scan' : '${scans.length} scans',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  style: TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 10.5,
+                    letterSpacing: 0.8,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -431,9 +490,17 @@ class _SummaryTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(
+                color.withAlpha(AppColors.isDark ? 22 : 12), AppColors.surface),
+            AppColors.surface,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withAlpha(AppColors.isDark ? 46 : 32)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,8 +510,10 @@ class _SummaryTile extends StatelessWidget {
           Text(
             value,
             style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
+              fontFamily: 'Sora',
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.8,
               color: AppColors.textPrimary,
             ),
           ),
@@ -452,7 +521,12 @@ class _SummaryTile extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            style: TextStyle(
+              fontFamily: 'JetBrainsMono',
+              fontSize: 9.5,
+              letterSpacing: 0.9,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       ),

@@ -20,11 +20,11 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        gradient: AppColors.glassGradient,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.glassBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -37,8 +37,9 @@ class StatCard extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: AppColors.bgAccent,
+                    color: AppColors.brand.withAlpha(AppColors.isDark ? 26 : 18),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.brand.withAlpha(60)),
                   ),
                   child: Icon(icon, size: 16, color: AppColors.textAccent),
                 ),
@@ -63,8 +64,10 @@ class StatCard extends StatelessWidget {
               Text(
                 value,
                 style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Sora',
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.8,
                   color: AppColors.textPrimary,
                 ),
               ),

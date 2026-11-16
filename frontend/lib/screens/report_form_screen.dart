@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
+import '../theme/app_colors.dart';
+import '../theme/herba_ui.dart';
 
 // ---------------------------------------------------------------------------
 // Report form (Activity 9)
@@ -17,12 +18,12 @@ import '../../theme/app_colors.dart';
 /// Set to Duration.zero for a normal, instant submission.
 const Duration _kSubmitDelay = Duration(seconds: 4);
 
-const _loadingInk = Color(0xFF1F5A99);
-const _loadingBg = Color(0xFFEAF2FB);
-const _loadingLine = Color(0xFFB9D3EE);
-const _successBg = Color(0xFFE8F4EC);
-const _successLine = Color(0xFFB7D9C4);
-const _successInk = Color(0xFF1E5A3A);
+const _loadingInk = Color(0xFF9BD8FF);
+const _loadingBg = Color(0xFF0E2233);
+const _loadingLine = Color(0xFF1E4A66);
+const _successBg = Color(0xFF0F2C1B);
+const _successLine = Color(0xFF2A6B45);
+const _successInk = Color(0xFF9BFFC0);
 
 const List<String> _reportTypes = [
   'Wrong identification',
@@ -50,7 +51,11 @@ class _Report {
 }
 
 class ReportFormScreen extends StatefulWidget {
-  const ReportFormScreen({super.key});
+  /// When true the page renders inside the app shell, without its own
+  /// Scaffold, app bar or background.
+  final bool embedded;
+
+  const ReportFormScreen({super.key, this.embedded = false});
 
   @override
   State<ReportFormScreen> createState() => _ReportFormScreenState();
@@ -311,19 +316,21 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
         break;
       case _SubmitState.error:
         banner = _statusBox(
-          background: Colors.red.shade50,
-          borderColor: Colors.red.shade200,
-          leading:
-              Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
+          background: const Color(0xFF2A1113),
+          borderColor: const Color(0xFF5A2226),
+          leading: const Icon(Icons.error_outline,
+              color: Color(0xFFFF8A8A), size: 20),
           label: 'Error',
           text: "Couldn't submit your report. Check your connection and try again.",
-          textColor: Colors.red.shade800,
+          textColor: const Color(0xFFFFC9C9),
           actions: [
             TextButton.icon(
               onPressed: _submit,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Retry'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red.shade800),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFFFC9C9),
+              ),
             ),
           ],
         );
@@ -569,65 +576,76 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        foregroundColor: AppColors.textPrimary,
-        title: const Text(
-          'Report an issue',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Tell us what went wrong',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
+  Widget _buildPageBody() {
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MicroLabel(
+                  'Support channel',
+                  color: AppColors.lime,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Tell us what went wrong',
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.9,
+                    color: AppColors.textPrimary,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Wrong plant name, missing details, or an app problem.',
-                    style:
-                        TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Wrong plant name, missing details, or an app problem.',
+                  style: TextStyle(
+                      fontSize: 13.5, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+                _buildStatusBanner(),
+                _buildForm(),
+                const SizedBox(height: 32),
+                Text(
+                  'My reports (${_reports.length})',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
-                  const SizedBox(height: 20),
-                  _buildStatusBanner(),
-                  _buildForm(),
-                  const SizedBox(height: 32),
-                  Text(
-                    'My reports (${_reports.length})',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildReportsList(),
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+                _buildReportsList(),
+              ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Embedded in the persistent app shell: no separate page chrome.
+    if (widget.embedded) return _buildPageBody();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: AppColors.textPrimary,
+        title: const Text('Report an issue'),
+      ),
+      body: HerbaBackdrop(child: _buildPageBody()),
     );
   }
 }
