@@ -1,0 +1,54 @@
+﻿id: 1
+name: Sambong (Alib-on, Alibhon, Gabon) - Blumea balsamifera
+category: Herbal
+description: Sambong is a herbal plant commonly found in the Philippines. It has soft, aromatic leaves and is traditionally used as a medicinal plant.
+benefits: It is traditionally associated with helping support urination, reducing water retention, and easing some common body discomforts.
+traditional_uses: The leaves are traditionally prepared as tea or used in herbal preparations for urinary and other common health concerns.
+risks: Too much use may cause unwanted effects such as stomach discomfort or increased urination. It may also interact with some medicines.
+precautions: Do not use as a replacement for medical treatment. Use carefully if taking medicine, especially medicines that affect urination or blood pressure. Ask a health professional if unsure.
+-----------------------------
+id: 2
+name: Rabana (Guyabano) - Annona muricata
+category: Herbal
+description: Guyabano is a tropical fruit tree with large green leaves and fruit. Its leaves have also been used in traditional herbal practices.
+benefits: Guyabano leaves are traditionally associated with antioxidant properties and are studied for possible health-supporting effects.
+traditional_uses: The leaves are sometimes prepared as tea or used in traditional herbal preparations.
+risks: Large amounts or frequent use of concentrated leaf preparations may cause unwanted effects. The safety of long-term use is not well established.
+precautions: Avoid excessive use of leaf preparations. Pregnant or breastfeeding people and those taking medicines should ask a health professional before using it.
+-----------------------------
+id: 3
+name: Sawansawan (False Ironwort) - Hyptis capitata Jacq.
+category: Herbal
+description: Sawansawan is a small herb with green leaves and small flower heads. It is also known as False Ironwort.
+benefits: It has been used in traditional practices for its possible soothing and plant-based health-supporting properties.
+traditional_uses: The plant has been used traditionally in herbal preparations for common minor health concerns.
+risks: Traditional use does not guarantee that it is safe or effective. Large amounts may cause unwanted effects.
+precautions: Use only in small traditional amounts and avoid self-treating serious conditions. Ask a health professional before using herbal preparations.
+-----------------------------
+id: 4
+name: Song of India (Pleomele) - Dracaena reflexa
+category: Non-herbal
+description: Song of India is a decorative plant with long green leaves and yellow or light-colored edges. It is commonly grown as an ornamental plant.
+benefits: It is mainly valued for decoration and adding greenery to indoor and outdoor spaces.
+traditional_uses: It is commonly used as an ornamental plant for homes, gardens, offices, and other spaces.
+risks: The plant is not considered a herbal medicine. Eating parts of the plant may cause stomach upset, especially in pets.
+precautions: Do not eat the leaves or other parts of the plant. Keep it away from children and pets who may chew on plants.
+-----------------------------
+id: 5
+name: Dumb Cane (Bakia) - Dieffenbachia seguine
+category: Non-herbal
+description: Dumb Cane is a common ornamental plant with large patterned leaves. It is grown mainly for decoration.
+benefits: It provides decorative greenery and is commonly used to improve the appearance of indoor spaces.
+traditional_uses: It is mainly used as an ornamental houseplant in homes, offices, gardens, and other areas.
+risks: Its leaves contain irritating substances that can cause burning, swelling, and pain in the mouth if chewed or eaten.
+precautions: Do not eat or chew the leaves. Keep the plant away from children and pets. Wash hands after handling if irritation occurs.
+-----------------------------
+id: 6
+name: Caladium (Corazon de Maria) - Caladium bicolor
+category: Non-herbal
+description: Caladium is a decorative plant known for its colorful, heart-shaped leaves. It is commonly grown for its attractive appearance.
+benefits: It is mainly valued as an ornamental plant and adds color and beauty to gardens and indoor spaces.
+traditional_uses: It is commonly used for decoration in gardens, homes, landscaping, and plant collections.
+risks: Caladium contains irritating substances that may cause burning, swelling, and irritation when eaten or chewed.
+precautions: Do not eat any part of the plant. Keep it away from children and pets. Handle carefully and wash hands after touching damaged plant parts.
+-----------------------------
