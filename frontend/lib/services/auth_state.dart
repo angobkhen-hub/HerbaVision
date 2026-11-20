@@ -110,6 +110,46 @@ class AuthState extends ChangeNotifier {
     }
   }
 
+  /// Changes the signed-in user's password.
+  ///
+  /// Returns null when it worked, or a message to show the user when it did not.
+  Future<String?> changePassword(String current, String next) async {
+    final token = _token;
+    if (token == null) {
+      return 'You need to be signed in to change your password.';
+    }
+
+    try {
+      await ApiService.changePassword(
+        token: token,
+        currentPassword: current,
+        newPassword: next,
+      );
+      return null;
+    } catch (e) {
+      if (e is ApiTimeoutException) {
+        return 'The server took too long to respond. Please try again.';
+      }
+      if (e is ApiConnectionException) {
+        return "Can't reach the server. Check your connection and try again.";
+      }
+      if (e is ApiException) {
+        final code = e.statusCode;
+        if (code == 400) return 'Your current password is incorrect.';
+        if (code == 401) {
+          return 'Your session has expired. Please log in again.';
+        }
+        if (code == 422) {
+          return 'The new password is not valid. Use at least 6 characters.';
+        }
+        if (code != null && code >= 500) {
+          return 'Something went wrong on our side. Please try again.';
+        }
+      }
+      return 'Something went wrong. Please try again.';
+    }
+  }
+
   void _startSession(Map<String, dynamic> data) {
     _token = data['access_token'];
     _userEmail = data['user']['email'];

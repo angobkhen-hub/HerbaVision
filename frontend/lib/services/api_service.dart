@@ -25,13 +25,21 @@ class ApiTimeoutException extends ApiException {
 }
 
 class ApiService {
-  // Web uses localhost, the Android emulator uses 10.0.2.2 (its alias for your
-  // PC's localhost). For a real phone, pass your laptop's address when running:
+  // Optional override, e.g.:
   //   flutter run --dart-define=API_BASE_URL=http://192.168.1.5:8000
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://192.168.1.18:8000',
-  );
+  static const String _override = String.fromEnvironment('API_BASE_URL');
+
+  /// Backend address.
+  /// - If API_BASE_URL was passed, that is used.
+  /// - On web, it uses the same host the page was loaded from (so it works on
+  ///   the laptop via localhost/herbavision.com and on a phone via the
+  ///   laptop's IP address), with the backend port 8000.
+  /// - On Android/iOS apps, it falls back to the fixed LAN address below.
+  static String get baseUrl {
+    if (_override.isNotEmpty) return _override;
+    if (kIsWeb) return 'http://${Uri.base.host}:8000';
+    return 'http://192.168.1.18:8000';
+  }
 
   /// How long login/register wait before giving up, so a stuck server never
   /// leaves a spinner running forever.
@@ -112,6 +120,85 @@ class ApiService {
     }
     throw ApiException(
       _detail(response, 'Login failed'),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// Changes the signed-in user's password.
+  /// Throws an [ApiException] (with the HTTP status) if the server refuses,
+  /// for example 400 when the current password is wrong.
+  static Future<void> changePassword({
+    required String token,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await _send(http.post(
+      Uri.parse('$baseUrl/auth/change-password'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      }),
+    ));
+
+    if (response.statusCode == 200) return;
+    throw ApiException(
+      _detail(response, 'Could not change password'),
+      statusCode: response.statusCode,
+    );
+  }
+
+  // ---- Reports ----
+
+  /// Sends a new issue report for the signed-in user.
+  static Future<Map<String, dynamic>> submitReport({
+    required String token,
+    required String type,
+    required String title,
+    required String description,
+  }) async {
+    final response = await _send(http.post(
+      Uri.parse('$baseUrl/reports'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'type': type,
+        'title': title,
+        'description': description,
+      }),
+    ));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw ApiException(
+      _detail(response, 'Could not submit report'),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// The signed-in user's reports, newest first.
+  static Future<List<Map<String, dynamic>>> fetchMyReports(
+      String token) async {
+    final response = await _send(http.get(
+      Uri.parse('$baseUrl/reports/me'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    ));
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(
+          jsonDecode(response.body) as List);
+    }
+    throw ApiException(
+      _detail(response, 'Could not load reports'),
       statusCode: response.statusCode,
     );
   }

@@ -45,10 +45,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
-  void _comingSoon(String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature isn\'t available yet.')),
+  Future<void> _showChangePassword() async {
+    final auth = context.read<AuthState>();
+
+    final changed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ChangePasswordDialog(onSubmit: auth.changePassword),
     );
+
+    if (changed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password updated')),
+      );
+    }
   }
 
   void _showHelp() {
@@ -192,7 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _NavTile(
                           icon: Icons.lock_outline,
                           title: 'Change password',
-                          onTap: () => _comingSoon('Changing your password'),
+                          onTap: _showChangePassword,
                         ),
                       ],
                     ),
@@ -277,6 +287,157 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Change password dialog
+// ---------------------------------------------------------------------------
+
+/// Asks for the current and new password. [onSubmit] must return null on
+/// success, or an error message to show in the dialog.
+class _ChangePasswordDialog extends StatefulWidget {
+  final Future<String?> Function(String current, String next) onSubmit;
+
+  const _ChangePasswordDialog({required this.onSubmit});
+
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  final _confirm = TextEditingController();
+
+  String? _error;
+  bool _loading = false;
+  bool _showPasswords = false;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_current.text.isEmpty) {
+      setState(() => _error = 'Enter your current password.');
+      return;
+    }
+    if (_next.text.length < 6) {
+      setState(() => _error = 'New password must be at least 6 characters.');
+      return;
+    }
+    if (_next.text != _confirm.text) {
+      setState(() => _error = 'The new passwords do not match.');
+      return;
+    }
+    if (_next.text == _current.text) {
+      setState(() => _error = 'New password must be different.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final err = await widget.onSubmit(_current.text, _next.text);
+    if (!mounted) return;
+
+    if (err == null) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _loading = false;
+        _error = err;
+      });
+    }
+  }
+
+  InputDecoration _decoration(String label) => InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text('Change password'),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _current,
+                obscureText: !_showPasswords,
+                enabled: !_loading,
+                decoration: _decoration('Current password'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _next,
+                obscureText: !_showPasswords,
+                enabled: !_loading,
+                decoration: _decoration('New password'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirm,
+                obscureText: !_showPasswords,
+                enabled: !_loading,
+                decoration: _decoration('Confirm new password'),
+                onSubmitted: (_) => _submit(),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: _showPasswords,
+                onChanged: _loading
+                    ? null
+                    : (v) => setState(() => _showPasswords = v ?? false),
+                title: const Text('Show passwords',
+                    style: TextStyle(fontSize: 13)),
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: AppColors.danger, fontSize: 13),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _loading ? null : _submit,
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
+        ),
+      ],
     );
   }
 }

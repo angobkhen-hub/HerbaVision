@@ -1,21 +1,23 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
+import '../services/api_service.dart';
+import '../services/auth_state.dart';
 
 // ---------------------------------------------------------------------------
-// Report form (Activity 9)
+// Report form
 //
 // Shows the four required states:
 //   LOADING : "Loading: submitting your report…", button disabled
 //   SUCCESS : "Success: report submitted", with a reference number and next actions
 //   EMPTY   : "Empty: no reports yet" in the My reports list, with a Create button
-//   ERROR   : "Error: …" with a Retry button (use the demo switch to trigger it)
+//   ERROR   : "Error: …" with a Retry button
+//
+// Reports are sent to the backend (POST /reports) and loaded from
+// GET /reports/me through ApiService.
 // ---------------------------------------------------------------------------
-
-/// How long the simulated submission takes, so Loading can be screenshotted.
-/// Set to Duration.zero for a normal, instant submission.
-const Duration _kSubmitDelay = Duration(seconds: 4);
 
 const _loadingInk = Color(0xFF1F5A99);
 const _loadingBg = Color(0xFFEAF2FB);
@@ -47,6 +49,14 @@ class _Report {
     required this.details,
     required this.createdAt,
   });
+
+  factory _Report.fromJson(Map<String, dynamic> j) => _Report(
+        id: 'R-${j['id']}',
+        type: j['type'] as String,
+        title: j['title'] as String,
+        details: j['description'] as String,
+        createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
+      );
 }
 
 class ReportFormScreen extends StatefulWidget {
@@ -68,14 +78,19 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   _SubmitState _state = _SubmitState.idle;
   String? _lastReportId;
 
-  /// DEMO ONLY: makes the next submission fail so the Error state and Retry can
-  /// be screenshotted. Remove the switch and this flag when you are done.
-  bool _simulateFailure = false;
-
   final List<_Report> _reports = [];
-  int _counter = 0;
+  bool _loadingReports = true;
 
   bool get _loading => _state == _SubmitState.loading;
+
+  /// The signed-in user's login token (null for guests / logged out).
+  String? get _token => context.read<AuthState>().token;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReports();
+  }
 
   @override
   void dispose() {
@@ -87,6 +102,28 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   }
 
   // ---- logic --------------------------------------------------------------
+
+  Future<void> _loadReports() async {
+    final token = _token;
+    if (token == null) {
+      // Guest or logged out: there are no saved reports to load.
+      if (mounted) setState(() => _loadingReports = false);
+      return;
+    }
+    try {
+      final list = await ApiService.fetchMyReports(token);
+      if (!mounted) return;
+      setState(() {
+        _reports
+          ..clear()
+          ..addAll(list.map((j) => _Report.fromJson(j)));
+        _loadingReports = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingReports = false);
+    }
+  }
 
   String? _validateTitle(String? v) {
     if (v == null || v.trim().isEmpty) return 'Enter a short title';
@@ -118,36 +155,35 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _state = _SubmitState.loading);
 
-    // Replace this block with a real API call when the backend has a reports
-    // endpoint. Until then the submission is simulated.
-    await Future.delayed(_kSubmitDelay);
-    if (!mounted) return;
-
-    if (_simulateFailure) {
+    final token = _token;
+    if (token == null) {
+      // Guests can't submit reports.
       setState(() => _state = _SubmitState.error);
       return;
     }
 
-    _counter++;
-    final id = 'R-${1000 + _counter}';
-    setState(() {
-      _reports.insert(
-        0,
-        _Report(
-          id: id,
-          type: _type,
-          title: _titleController.text.trim(),
-          details: _detailsController.text.trim(),
-          createdAt: DateTime.now(),
-        ),
+    try {
+      final json = await ApiService.submitReport(
+        token: token,
+        type: _type,
+        title: _titleController.text.trim(),
+        description: _detailsController.text.trim(),
       );
-      _lastReportId = id;
-      _state = _SubmitState.success;
-      _titleController.clear();
-      _detailsController.clear();
-      _autovalidate = AutovalidateMode.disabled;
-      _type = _reportTypes.first;
-    });
+      if (!mounted) return;
+      final report = _Report.fromJson(json);
+      setState(() {
+        _reports.insert(0, report);
+        _lastReportId = report.id;
+        _state = _SubmitState.success;
+        _titleController.clear();
+        _detailsController.clear();
+        _autovalidate = AutovalidateMode.disabled;
+        _type = _reportTypes.first;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _state = _SubmitState.error);
+    }
   }
 
   void _startNewReport() {
@@ -382,31 +418,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
             validator: _validateDetails,
             onChanged: (_) => _onEdited(),
           ),
-          const SizedBox(height: 14),
-          // DEMO ONLY: remove before final submission.
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppColors.bgWarning,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text(
-                'Demo: simulate a failed submission',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Turn on to screenshot the Error state and Retry.',
-                style: TextStyle(fontSize: 12),
-              ),
-              value: _simulateFailure,
-              onChanged: _loading
-                  ? null
-                  : (v) => setState(() => _simulateFailure = v),
-            ),
-          ),
           const SizedBox(height: 20),
           SizedBox(
             height: 52,
@@ -449,6 +460,13 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   }
 
   Widget _buildReportsList() {
+    if (_loadingReports) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (_reports.isEmpty) {
       // EMPTY: no reports yet
       return Container(
