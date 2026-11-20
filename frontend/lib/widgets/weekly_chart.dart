@@ -1,9 +1,12 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+import '../theme/app_animations.dart';
 import '../theme/app_colors.dart';
 
 /// Bar chart of scans per day for the last N days (oldest first).
-/// [values] are scan counts; bars scale to the busiest day.
+/// [values] are scan counts; bars grow in and scale to the busiest day.
 class WeeklyChart extends StatelessWidget {
   final List<int> values;
   final double maxHeight;
@@ -29,6 +32,7 @@ class WeeklyChart extends StatelessWidget {
           for (var i = 0; i < values.length; i++)
             Expanded(
               child: _Bar(
+                index: i,
                 value: values[i],
                 maxValue: maxValue,
                 maxHeight: maxHeight,
@@ -46,6 +50,7 @@ class WeeklyChart extends StatelessWidget {
 }
 
 class _Bar extends StatelessWidget {
+  final int index;
   final int value;
   final int maxValue;
   final double maxHeight;
@@ -53,6 +58,7 @@ class _Bar extends StatelessWidget {
   final bool isToday;
 
   const _Bar({
+    required this.index,
     required this.value,
     required this.maxValue,
     required this.maxHeight,
@@ -70,21 +76,48 @@ class _Bar extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         if (hasValue)
-          Text(
-            '$value',
+          AnimatedCounter(
+            value: value,
+            duration: Duration(milliseconds: 650 + index * 70),
             style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary),
           ),
         const SizedBox(height: 4),
-        Container(
-          height: barHeight,
-          margin: const EdgeInsets.symmetric(horizontal: 5),
-          decoration: BoxDecoration(
-            color: hasValue ? AppColors.brand : AppColors.border,
-            borderRadius: BorderRadius.circular(6),
-          ),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: barHeight),
+          duration: Duration(milliseconds: 750 + index * 80),
+          curve: HerbaMotion.emphasized,
+          builder: (context, height, _) {
+            return Container(
+              height: height,
+              margin: const EdgeInsets.symmetric(horizontal: 5),
+              decoration: BoxDecoration(
+                gradient: hasValue
+                    ? LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: isToday
+                            ? [AppColors.emerald, AppColors.lime]
+                            : [AppColors.brand, AppColors.emerald],
+                      )
+                    : null,
+                color: hasValue ? null : AppColors.border,
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: hasValue
+                    ? [
+                        BoxShadow(
+                          color: AppColors.emerald
+                              .withAlpha(isToday ? 80 : 40),
+                          blurRadius: isToday ? 14 : 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
+              ),
+            );
+          },
         ),
         const SizedBox(height: 6),
         Text(

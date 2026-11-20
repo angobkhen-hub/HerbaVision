@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
+import '../theme/herba_ui.dart';
 import '../services/auth_state.dart';
 import '../services/settings_state.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  /// When true the page renders inside the app shell, without its own
+  /// Scaffold, app bar or background.
+  final bool embedded;
+
+  const SettingsScreen({super.key, this.embedded = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -164,31 +169,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final displayName = isGuest ? 'Guest' : (authState.userName ?? 'Unknown user');
     final email = isGuest ? 'Not signed in' : (authState.userEmail ?? '');
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        foregroundColor: AppColors.textPrimary,
-        title: const Text(
-          'Settings',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.bgTop, AppColors.bg, AppColors.bgBottom],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: ListView(
+    final body = SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
                 children: [
+                  MicroLabel(
+                    'Command centre',
+                    color: AppColors.lime,
+                  ),
+                  const SizedBox(height: 14),
                   _ProfileCard(
                     name: displayName,
                     email: email,
@@ -285,8 +277,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-        ),
+        );
+
+    if (widget.embedded) return body;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: AppColors.textPrimary,
+        title: const Text('Settings'),
       ),
+      body: HerbaBackdrop(child: body),
     );
   }
 }
@@ -468,9 +471,22 @@ class _ProfileCard extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.brandDark, AppColors.brand, AppColors.brandLight],
+          colors: AppColors.isDark
+              ? const [Color(0xFF12291C), Color(0xFF081410)]
+              : const [Color(0xFFFFFFFF), Color(0xFFEFF7ED)],
+        ),
+        border: Border.all(
+          color: (isGuest ? AppColors.textMuted : AppColors.emerald)
+              .withAlpha(AppColors.isDark ? 60 : 45),
         ),
         boxShadow: [
+          BoxShadow(
+            color: (isGuest ? AppColors.textMuted : AppColors.emerald)
+                .withAlpha(AppColors.isDark ? 34 : 20),
+            blurRadius: 44,
+            spreadRadius: -12,
+            offset: const Offset(0, 16),
+          ),
           BoxShadow(
               color: AppColors.shadow,
               blurRadius: 24,
@@ -479,15 +495,29 @@ class _ProfileCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.white,
-            child: Text(
-              initial,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: AppColors.brandDark,
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: AppColors.brandGradient,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.emerald.withAlpha(90),
+                  blurRadius: 24,
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                initial,
+                style: TextStyle(
+                  fontFamily: 'Sora',
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onBrand,
+                ),
               ),
             ),
           ),
@@ -500,11 +530,12 @@ class _ProfileCard extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
+                    fontFamily: 'Sora',
                     fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 if (email.isNotEmpty)
@@ -514,28 +545,19 @@ class _ProfileCard extends StatelessWidget {
                       email,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xDDFFFFFF),
+                      style: TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 11.5,
+                        letterSpacing: 0.2,
+                        color: AppColors.textMuted,
                       ),
                     ),
                   ),
-                const SizedBox(height: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0x33FFFFFF),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    isGuest ? 'Browsing as guest' : 'Signed in',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
+                const SizedBox(height: 10),
+                HerbaPill(
+                  isGuest ? 'Guest mode' : 'Verified',
+                  icon: isGuest ? Icons.visibility_outlined : Icons.verified,
+                  color: isGuest ? AppColors.accentAmber : AppColors.emerald,
                 ),
               ],
             ),
@@ -553,15 +575,8 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8, left: 4),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textSecondary,
-        ),
-      ),
+      padding: const EdgeInsets.only(bottom: 10, left: 4),
+      child: MicroLabel(text, color: AppColors.textSecondary, dot: false),
     );
   }
 }
@@ -582,16 +597,19 @@ class _SettingsCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
+        gradient: AppColors.glassGradient,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.glassBorder),
         boxShadow: [
           BoxShadow(
-              color: AppColors.shadow, blurRadius: 16, offset: const Offset(0, 6)),
+              color: AppColors.shadow,
+              blurRadius: 26,
+              spreadRadius: -8,
+              offset: const Offset(0, 12)),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Column(children: rows),
       ),
     );
@@ -608,10 +626,11 @@ class _IconBadge extends StatelessWidget {
       width: 38,
       height: 38,
       decoration: BoxDecoration(
-        color: AppColors.bgAccent,
+        color: AppColors.brand.withAlpha(AppColors.isDark ? 26 : 18),
         borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: AppColors.brand.withAlpha(60)),
       ),
-      child: Icon(icon, color: AppColors.brand, size: 20),
+      child: Icon(icon, color: AppColors.textAccent, size: 19),
     );
   }
 }
