@@ -51,11 +51,12 @@ COMMON_NAMES = {
 }
 OTHER_NAME = "Other plants"           # if this is the top guess, the leaf is "not in the dataset"
 
-# Multi-view prediction (test-time augmentation). Real-world photos often have the leaf
-# off-centre, which a single centre crop can cut off. With USE_TTA the model looks at the
-# centre plus the four corners, each also mirrored (10 views), and the probabilities are
-# averaged. Set USE_TTA = False to go back to the single centre crop.
-USE_TTA = os.environ.get("LEAF_TTA", "1") != "0"   # set the environment variable LEAF_TTA=0 to compare
+# Multi-view prediction (test-time augmentation). It is now OFF by default because
+# it made every scan much slower on a laptop without a GPU.
+#   LEAF_TTA=0 (default): one centre crop            -> fastest
+#   LEAF_TTA=1          : centre crop + its mirror   -> 2 views, still fast
+# To switch it on, set the environment variable LEAF_TTA=1 before starting uvicorn.
+USE_TTA = os.environ.get("LEAF_TTA", "0") != "0"
 CROP = 224
 
 _resize = transforms.Resize(256)
@@ -70,11 +71,11 @@ def _views(im):
     im = _resize(im)
     w, h = im.size
     cx, cy = int(round((w - CROP) / 2.0)), int(round((h - CROP) / 2.0))
-    corners = [(cx, cy), (0, 0), (w - CROP, 0), (0, h - CROP), (w - CROP, h - CROP)]
-    crops = [im.crop((x, y, x + CROP, y + CROP)) for x, y in corners]
+    centre = im.crop((cx, cy, cx + CROP, cy + CROP))
     if not USE_TTA:
-        return crops[:1]
-    return crops + [ImageOps.mirror(c) for c in crops]
+        return [centre]
+    return [centre, ImageOps.mirror(centre)]
+
 
 _model = None
 _classes = None
@@ -124,6 +125,9 @@ def predict(image_path, top_k=3):
         # Browsers and galleries obey it; Pillow does not, so apply it here so the
         # model sees the leaf the way you see it.
         im = ImageOps.exif_transpose(im).convert("RGB")
+        # Shrink big photos early: resizing a 12-megapixel photo is slow, and the
+        # model only needs about 256 px anyway.
+        im.thumbnail((1024, 1024))
         x = torch.stack([_finish(v) for v in _views(im)])
     with torch.no_grad():
         feats = torch.flatten(_model.avgpool(_model.features(x)), 1)

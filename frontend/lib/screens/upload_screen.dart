@@ -43,6 +43,7 @@ class _UploadScreenState extends State<UploadScreen> {
   Uint8List? _imageBytes;
   String _filename = 'leaf.jpg';
   int? _sizeKb; // size of the photo being uploaded (shown for testing)
+  double? _pickSeconds; // time spent picking and shrinking the photo (testing)
   bool _loading = false;
   bool _notFound = false; // true after the backend says "plant not found"
   String? _guessName; // best guess from the backend, if it sent one
@@ -115,6 +116,7 @@ class _UploadScreenState extends State<UploadScreen> {
     try {
       // Small photos upload much faster on a phone. The model resizes the
       // image anyway, so accuracy stays about the same.
+      final sw = Stopwatch()..start();
       final picked = await _picker.pickImage(
         source: source,
         maxWidth: 1024,
@@ -124,6 +126,7 @@ class _UploadScreenState extends State<UploadScreen> {
       if (picked == null) return; // user cancelled
 
       final bytes = await picked.readAsBytes();
+      _pickSeconds = sw.elapsedMilliseconds / 1000;
       if (!mounted) return;
 
       setState(() {
@@ -154,12 +157,23 @@ class _UploadScreenState extends State<UploadScreen> {
     });
 
     try {
+      final sw = Stopwatch()..start();
       final HerbScan scan = await _recognitionService.identifyLeaf(
         _imageBytes!,
         filename: _filename,
       );
+      final recognizeSeconds = sw.elapsedMilliseconds / 1000;
       if (!mounted) return;
       setState(() => _loading = false);
+      // Timing message (stays visible after this screen closes). Remove this
+      // block once you are done testing.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 10),
+        content: Text(
+          'Pick/resize: ${_pickSeconds?.toStringAsFixed(1)}s  ·  '
+          'Recognize: ${recognizeSeconds.toStringAsFixed(1)}s',
+        ),
+      ));
       // Send back the photo together with the result so the dashboard can
       // show it in the result dialog.
       Navigator.of(context).pop(UploadResult(scan, _imageBytes!));
