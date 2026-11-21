@@ -22,6 +22,13 @@ import 'report_form_screen.dart';
 /// Narrower screens get the mobile layout with a drawer.
 const double _kWideBreakpoint = 900;
 
+/// Species the library marks as non-herbal (used if the lookup has no category).
+const Set<String> _kNonHerbalLatin = {
+  'caladium bicolor',
+  'dieffenbachia seguine',
+  'dracaena reflexa',
+};
+
 String _greeting() {
   final hour = DateTime.now().hour;
   if (hour < 12) return 'Good morning';
@@ -212,16 +219,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _showResultDialog(
-      HerbScan scan, String? note, Uint8List imageBytes) async {
+      HerbScan result, String? note, Uint8List imageBytes) async {
     // Look up the herb's stored information (leaf_items table). If it can't be
     // loaded, the dialog still shows the identification result.
     dynamic info;
     try {
-      info = await ApiService.getHerbInfo(scan.latinName);
+      info = await ApiService.getHerbInfo(result.latinName);
     } catch (_) {
       info = null; // the dialog still opens, with "coming soon" text
     }
     if (!mounted) return;
+
+    // Non-herbal leaves keep their name, Latin name and information, but the
+    // confidence is hidden and a "non-herbal" message is shown.
+    final category =
+        ((info?['category'] as String?) ?? '').trim().toLowerCase();
+    final nonHerbal = category == 'non-herbal' ||
+        _kNonHerbalLatin.contains(result.latinName.trim().toLowerCase());
+    final scan = result;
 
     // One information card: tinted icon badge, title, text.
     // [big] is used by the wide (web) layout.
@@ -288,6 +303,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Confidence, save status and the information cards.
         // Same content for both layouts; sizes grow on wide screens.
         Widget bodyContent() {
+          // Non-herbal: say so and hide the confidence, but keep the leaf information.
+          if (nonHerbal) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(wide ? 18 : 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgWarning,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: AppColors.textWarning.withOpacity(0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.local_florist_outlined,
+                          size: wide ? 26 : 22, color: AppColors.textWarning),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'This leaf is non-herbal.',
+                          style: TextStyle(
+                            fontSize: wide ? 18 : 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (note != null) ...[
+                  SizedBox(height: 14),
+                  Text(
+                    note,
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSuccess),
+                  ),
+                ],
+                if (info == null) ...[
+                  SizedBox(height: 14),
+                  Text(
+                    'More information about this plant is coming soon.',
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                ],
+                section('About', info?['description'] as String?,
+                    Icons.info_outline, AppColors.brand,
+                    big: wide),
+                section('Benefits', info?['benefits'] as String?,
+                    Icons.spa_outlined, AppColors.accentBlue,
+                    big: wide),
+                section('Traditional uses',
+                    info?['traditional_uses'] as String?,
+                    Icons.menu_book_outlined, AppColors.accentPurple,
+                    big: wide),
+                section('Risks', info?['risks'] as String?,
+                    Icons.warning_amber_rounded, AppColors.accentAmber,
+                    big: wide),
+                section('Precautions', info?['precautions'] as String?,
+                    Icons.shield_outlined, AppColors.accentAmber,
+                    big: wide),
+              ],
+            );
+          }
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1237,7 +1320,23 @@ class _HeroBannerState extends State<_HeroBanner>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 8),
-    )..repeat();
+      value: 0.35,
+    );
+    // The endless light-sweep animation is heavy on phones, so it runs
+    // only on wide (desktop) screens.
+    if (widget.isWide) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isWide != oldWidget.isWide) {
+      if (widget.isWide) {
+        _controller.repeat();
+      } else {
+        _controller.stop();
+      }
+    }
   }
 
   @override
@@ -1575,10 +1674,20 @@ class _StatTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: MicroLabel(
-                    label,
-                    color: AppColors.textSecondary,
-                    dot: false,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      label.toUpperCase(),
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 10,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
               ],

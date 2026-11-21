@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -41,16 +42,27 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Uint8List? _imageBytes;
   String _filename = 'leaf.jpg';
+  int? _sizeKb; // size of the photo being uploaded (shown for testing)
   bool _loading = false;
   bool _notFound = false; // true after the backend says "plant not found"
   String? _guessName; // best guess from the backend, if it sent one
   int? _guessConfidence;
   String? _error;
 
+  /// True when a camera can be offered: the Android/iOS apps, and phone
+  /// browsers (where the camera opens the phone's own camera app).
+  /// Desktop browsers have no camera option, so they go straight to the file
+  /// chooser.
+  bool get _cameraAvailable {
+    if (!kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
   Future<void> _showSourceSheet() async {
     // Desktop browsers have no camera option in image_picker, so go straight
-    // to the file chooser on the web.
-    if (kIsWeb) {
+    // to the file chooser there.
+    if (!_cameraAvailable) {
       await _pickImage(ImageSource.gallery);
       return;
     }
@@ -101,10 +113,13 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
+      // Small photos upload much faster on a phone. The model resizes the
+      // image anyway, so accuracy stays about the same.
       final picked = await _picker.pickImage(
         source: source,
-        imageQuality: 85,
-        maxWidth: 1600,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 80,
       );
       if (picked == null) return; // user cancelled
 
@@ -114,6 +129,7 @@ class _UploadScreenState extends State<UploadScreen> {
       setState(() {
         _imageBytes = bytes;
         _filename = picked.name.isNotEmpty ? picked.name : 'leaf.jpg';
+        _sizeKb = (bytes.lengthInBytes / 1024).round();
         _error = null;
         _notFound = false;
         _guessName = null;
@@ -242,6 +258,8 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Widget _photoPreview() {
+    final label =
+        _sizeKb != null ? '$_filename · $_sizeKb KB' : _filename; // display only
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
@@ -278,7 +296,7 @@ class _UploadScreenState extends State<UploadScreen> {
                     const SizedBox(width: 7),
                     Expanded(
                       child: Text(
-                        _filename,
+                        label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -493,7 +511,7 @@ class _UploadScreenState extends State<UploadScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!_loading) _primaryButton(),
-        if (!_loading && _notFound && !kIsWeb) ...[
+        if (!_loading && _notFound && _cameraAvailable) ...[
           const SizedBox(height: 12),
           PressableScale(
             child: SizedBox(
